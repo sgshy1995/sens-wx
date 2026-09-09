@@ -1,0 +1,6 @@
+unpackage/
+.DS_Store
+.hbuilderx/
+
+AGENTS.md
+.codegraph/
