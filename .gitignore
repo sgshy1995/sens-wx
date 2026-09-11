@@ -1,6 +1,9 @@
 unpackage/
 .DS_Store
 .hbuilderx/
+node_modules/
+
+.env.*
 
 AGENTS.md
 .codegraph/

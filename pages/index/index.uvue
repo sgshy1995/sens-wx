@@ -1,24 +1,1143 @@
 <template>
-	<view>
-		<image class="logo" src="/static/logo.png"></image>
-		<text class="title">{{title}}</text>
+	<view class="page">
+		<view v-if="initialLoading" class="skeleton-page">
+			<view class="nav-space" :style="{ height: statusBarHeight + 'px' }"></view>
+			<view class="skeleton-block skeleton-header"></view>
+			<view class="skeleton-block skeleton-carousel"></view>
+			<view class="skeleton-categories">
+				<view class="skeleton-chip"></view>
+				<view class="skeleton-chip"></view>
+				<view class="skeleton-chip"></view>
+				<view class="skeleton-chip"></view>
+				<view class="skeleton-chip"></view>
+			</view>
+			<view class="skeleton-list">
+				<view class="skeleton-card">
+					<view class="skeleton-line skeleton-line-short"></view>
+					<view class="skeleton-line"></view>
+					<view class="skeleton-line skeleton-line-long"></view>
+				</view>
+				<view class="skeleton-card">
+					<view class="skeleton-line skeleton-line-short"></view>
+					<view class="skeleton-line"></view>
+					<view class="skeleton-line skeleton-line-long"></view>
+				</view>
+				<view class="skeleton-card">
+					<view class="skeleton-line skeleton-line-short"></view>
+					<view class="skeleton-line"></view>
+					<view class="skeleton-line skeleton-line-long"></view>
+				</view>
+			</view>
+		</view>
+
+		<template v-else>
+			<view class="nav-space" :style="{ height: statusBarHeight + 'px' }"></view>
+
+			<view class="header">
+				<view class="header-copy">
+					<text class="header-title">康复论坛</text>
+					<text class="header-subtitle">运动损伤 · 科学康复 · 经验分享</text>
+				</view>
+			</view>
+
+			<view class="carousel-wrap">
+				<swiper
+					v-if="carousel.length > 0"
+					class="carousel"
+					circular
+					:current="swiperIndex"
+					@change="onSwiperChange"
+				>
+					<swiper-item v-for="(item, index) in carousel" :key="item.id + '-' + index">
+						<view class="carousel-item">
+							<image class="carousel-image" :src="resolveFileUrl(item.cover)" mode="aspectFill"></image>
+							<view class="carousel-mask"></view>
+							<view class="carousel-body">
+								<view class="hot-badge">
+									<text class="hot-icon">🔥</text>
+									<text class="hot-text">热门咨询</text>
+								</view>
+								<text class="carousel-title">{{ item.title }}</text>
+								<text class="carousel-count">{{ formatCount(item.viewNum) }}</text>
+							</view>
+						</view>
+					</swiper-item>
+				</swiper>
+				<view class="carousel-dots">
+					<view v-for="(item, index) in carousel" :key="'dot-' + index" class="carousel-dot" :class="{ 'carousel-dot-active': swiperIndex === index }"></view>
+				</view>
+			</view>
+
+			<view class="category-wrap">
+				<view v-if="customMode" class="custom-tag-bar" @click="openTagPicker">
+					<text class="custom-tag-title">{{ customTagTitle.length > 0 ? customTagTitle : '康复标签' }}</text>
+					<view class="custom-tag-close" @click.stop="resetCustomTag">
+						<text class="custom-tag-close-text">X</text>
+					</view>
+				</view>
+				<view v-else class="category-head">
+					<image class="tag-pick-icon" src="/static/icons/ic-tag-pick.svg" mode="aspectFit" @click="openTagPicker"></image>
+					<scroll-view class="category-scroll" scroll-x>
+						<view class="category-row">
+							<view
+								v-for="(title, index) in presetTagTitles"
+								:key="index"
+								class="category-chip"
+								:class="{ 'category-chip-active': selectedTagId === presetTagIds[index] }"
+								@click="selectPresetCategory(index)"
+							>
+								<text>{{ title }}</text>
+							</view>
+						</view>
+					</scroll-view>
+				</view>
+			</view>
+
+			<view class="article-list">
+				<view v-for="(item, index) in list" :key="item.id + '-' + index" class="article-card">
+					<view class="author-row">
+						<view class="author-info">
+							<image v-if="item.avatar" class="author-avatar" :src="resolveFileUrl(item.avatar)" mode="aspectFill"></image>
+							<view v-else class="author-avatar author-avatar-empty">
+								<text>{{ item.name.length > 0 ? item.name.substring(0, 1) : '康' }}</text>
+							</view>
+							<text class="author-name">{{ item.name || '康复用户' }}</text>
+						</view>
+						<text class="author-time">{{ item.timeText }}</text>
+					</view>
+
+					<view v-if="item.cover" class="content-row">
+						<view class="content-copy">
+							<text class="article-title">{{ item.title }}</text>
+							<text class="article-summary">{{ item.summary }}</text>
+						</view>
+						<image class="article-cover" :src="resolveFileUrl(item.cover)" mode="aspectFill"></image>
+					</view>
+
+					<template v-else>
+						<text class="article-title">{{ item.title }}</text>
+						<text class="article-summary">{{ item.summary }}</text>
+						<view v-if="item.isEssence === 1" class="tag-row">
+							<view class="tag-chip"><text class="tag-text">精华</text></view>
+						</view>
+					</template>
+
+					<view v-if="item.tagName.length > 0" class="article-tag-row">
+						<view class="article-tag-chip"><text class="article-tag-text">{{ displayTagTitle(item) }}</text></view>
+					</view>
+
+					<view class="interact-row">
+						<view class="interact-group interact-group-left">
+							<image class="interact-icon-img" :src="item.isLiked ? '/static/icons/ic-like-active.svg' : '/static/icons/ic-like.svg'" mode="aspectFit"></image>
+							<text class="interact-count">{{ item.likeNum }}</text>
+						</view>
+						<view class="interact-group">
+							<image class="interact-icon-img" src="/static/icons/ic-comment.svg" mode="aspectFit"></image>
+							<text class="interact-count">{{ item.commentNum }}</text>
+						</view>
+						<view class="interact-group interact-group-right">
+							<image class="interact-icon-img" :src="item.isCollected ? '/static/icons/ic-star-active.svg' : '/static/icons/ic-star.svg'" mode="aspectFit"></image>
+							<text class="interact-count">{{ item.collectNum }}</text>
+						</view>
+					</view>
+				</view>
+			</view>
+
+			<view v-if="loading" class="list-status"><text>加载中...</text></view>
+			<view v-else-if="finished && list.length > 0" class="list-status"><text>已经到底了</text></view>
+			<view v-else-if="list.length === 0 && !loading" class="list-status"><text>暂无内容</text></view>
+		</template>
+
+		<view v-if="pickerVisible" class="picker-mask" @click="closePicker">
+			<view class="picker-panel" @click.stop>
+				<view class="picker-header">
+					<text class="picker-title">选择康复标签</text>
+					<view class="picker-header-close" @click="closePicker">
+						<text class="picker-header-close-text">关闭</text>
+					</view>
+				</view>
+				<scroll-view class="picker-scroll" scroll-y>
+					<view class="picker-level">
+						<text class="picker-level-title">复健类型</text>
+						<view class="picker-options">
+							<view
+								v-for="tag in pickerLevel1Tags"
+								:key="tag.id"
+								class="picker-option"
+								:class="{ 'picker-option-active': pickerLevel1Id === tag.id }"
+								@click="selectPickerLevel1(tag)"
+							>
+								<text>{{ tag.title }}</text>
+							</view>
+						</view>
+					</view>
+					<view v-if="pickerLevel2Tags.length > 0" class="picker-level">
+						<text class="picker-level-title">伤痛部位</text>
+						<view class="picker-options">
+							<view
+								v-for="tag in pickerLevel2Tags"
+								:key="tag.id"
+								class="picker-option"
+								:class="{ 'picker-option-active': pickerLevel2Id === tag.id }"
+								@click="selectPickerLevel2(tag)"
+							>
+								<text>{{ tag.title }}</text>
+							</view>
+						</view>
+					</view>
+					<view v-if="pickerLevel3Tags.length > 0" class="picker-level">
+						<text class="picker-level-title">伤痛类型</text>
+						<view class="picker-options">
+							<view
+								v-for="tag in pickerLevel3Tags"
+								:key="tag.id"
+								class="picker-option"
+								:class="{ 'picker-option-active': pickerSelectedTagId === tag.id }"
+								@click="selectPickerLevel3(tag)"
+							>
+								<text>{{ tag.title }}</text>
+							</view>
+						</view>
+					</view>
+				</scroll-view>
+				<view class="picker-footer">
+					<view class="picker-selected">
+						<text v-if="pickerSelectedTagId.length > 0" class="picker-selected-text">{{ pickerSelectedTagTitle }}</text>
+						<text v-else class="picker-selected-placeholder">请选择标签</text>
+					</view>
+					<view class="picker-actions">
+						<view class="picker-btn picker-btn-cancel" @click="closePicker">
+							<text>取消</text>
+						</view>
+						<view class="picker-btn picker-btn-ok" @click="confirmPicker">
+							<text>确定</text>
+						</view>
+					</view>
+				</view>
+			</view>
+		</view>
 	</view>
 </template>
 
 <script setup lang="uts">
-	const title = ref('Hello')
+	import { get } from '../../common/request'
+	import { ForumArticle, PrescriptionTag, formatCount, resolveFileUrl } from '../../common/forum'
+
+	const statusBarHeight = ref(24)
+	const carousel = ref<ForumArticle[]>([])
+	const list = ref<ForumArticle[]>([])
+	const page = ref(1)
+	const pageSize = ref(10)
+	const swiperIndex = ref(0)
+	const loading = ref(false)
+	const finished = ref(false)
+
+	const allTags = ref<PrescriptionTag[]>([])
+	const presetTagIds = ref<string[]>([''])
+	const presetTagTitles = ref<string[]>(['全部'])
+	const selectedTagId = ref('')
+	const selectedTagTitle = ref('')
+	const customMode = ref(false)
+	const customTagId = ref('')
+	const customTagTitle = ref('')
+
+	const pickerVisible = ref(false)
+	const pickerLevel1Tags = ref<PrescriptionTag[]>([])
+	const pickerLevel2Tags = ref<PrescriptionTag[]>([])
+	const pickerLevel3Tags = ref<PrescriptionTag[]>([])
+	const pickerLevel1Id = ref('')
+	const pickerLevel2Id = ref('')
+	const pickerSelectedTagId = ref('')
+	const pickerSelectedTagTitle = ref('')
+
+	const initialLoading = ref(true)
+	const tagsReady = ref(false)
+	const listReady = ref(false)
+
+	function checkInitialLoaded (): void {
+		if (tagsReady.value && listReady.value) {
+			initialLoading.value = false
+		}
+	}
+
+	function childrenTags (parentId: string, level: number): PrescriptionTag[] {
+		const result: PrescriptionTag[] = []
+		for (let i = 0; i < allTags.value.length; i++) {
+			const tag = allTags.value[i]
+			if (tag.status === 1 && tag.parentId === parentId && tag.level === level) {
+				result.push(tag)
+			}
+		}
+		return result
+	}
+
+	function findTagIndex (id: string): number {
+		for (let i = 0; i < allTags.value.length; i++) {
+			if (allTags.value[i].id === id) {
+				return i
+			}
+		}
+		return -1
+	}
+
+	function fullTagTitle (id: string): string {
+		const index = findTagIndex(id)
+		if (index < 0) {
+			return ''
+		}
+		let title = allTags.value[index].title
+		let parentId = allTags.value[index].parentId
+		while (parentId.length > 0 && parentId !== '0') {
+			const parentIndex = findTagIndex(parentId)
+			if (parentIndex < 0) {
+				break
+			}
+			title = allTags.value[parentIndex].title + ' - ' + title
+			parentId = allTags.value[parentIndex].parentId
+		}
+		return title
+	}
+
+	function lastTagName (fullName: string): string {
+		const marker = ' - '
+		let lastIndex = -1
+		let i = 0
+		while (i <= fullName.length - marker.length) {
+			if (fullName.substring(i, i + marker.length) === marker) {
+				lastIndex = i
+				i += marker.length
+			} else {
+				i += 1
+			}
+		}
+		if (lastIndex < 0) {
+			return fullName
+		}
+		return fullName.substring(lastIndex + marker.length)
+	}
+
+	function displayTagTitle (item: ForumArticle): string {
+		if (selectedTagId.value.length > 0 && selectedTagTitle.value.length > 0) {
+			return selectedTagTitle.value
+		}
+		return lastTagName(item.tagName)
+	}
+
+	function buildPresetTags (): void {
+		presetTagIds.value = ['']
+		presetTagTitles.value = ['全部']
+		const level1Tags = childrenTags('0', 1)
+		const level2Tags: PrescriptionTag[] = []
+		for (let i = 0; i < level1Tags.length; i++) {
+			const children = childrenTags(level1Tags[i].id, 2)
+			for (let j = 0; j < children.length; j++) {
+				level2Tags.push(children[j])
+			}
+		}
+		for (let i = 0; i < level2Tags.length; i++) {
+			presetTagIds.value.push(level2Tags[i].id)
+			presetTagTitles.value.push(level2Tags[i].title)
+		}
+		for (let i = 0; i < level2Tags.length; i++) {
+			const tag = level2Tags[i]
+			const level3Tags = childrenTags(tag.id, 3)
+			const max = level3Tags.length > 3 ? 3 : level3Tags.length
+			for (let j = 0; j < max; j++) {
+				presetTagIds.value.push(level3Tags[j].id)
+				presetTagTitles.value.push(level3Tags[j].title)
+			}
+		}
+	}
+
+	function loadTags (): void {
+		get('/prescription_tag/mini_find', (res) => {
+			const items = res.getArray<UTSJSONObject>('data')
+			const parsed: PrescriptionTag[] = []
+			if (items != null) {
+				for (let i = 0; i < items.length; i++) {
+					const tag = new PrescriptionTag()
+					tag.initFromJSON(items[i])
+					parsed.push(tag)
+				}
+			}
+			allTags.value = parsed
+			buildPresetTags()
+			tagsReady.value = true
+			checkInitialLoaded()
+		}, () => {
+			tagsReady.value = true
+			checkInitialLoaded()
+		})
+	}
+
+	function appendArticles (items: Array<UTSJSONObject>, reset: boolean): void {
+		const parsed: ForumArticle[] = []
+		for (let i = 0; i < items.length; i++) {
+			const item = new ForumArticle()
+			item.initFromJSON(items[i])
+			parsed.push(item)
+		}
+		if (reset) {
+			list.value = parsed
+		} else {
+			for (let i = 0; i < parsed.length; i++) {
+				list.value.push(parsed[i])
+			}
+		}
+	}
+
+	function loadCarousel (): void {
+		get('/forum_article/carousel', (res) => {
+			const items = res.getArray<UTSJSONObject>('data')
+			if (items == null) {
+				return
+			}
+			const parsed: ForumArticle[] = []
+			for (let i = 0; i < items.length; i++) {
+				const item = new ForumArticle()
+				item.initFromJSON(items[i])
+				parsed.push(item)
+			}
+			carousel.value = parsed
+		}, (message) => {
+			uni.showToast({ title: message, icon: 'none' })
+		})
+	}
+
+	function finishLoading (): void {
+		loading.value = false
+		listReady.value = true
+		uni.stopPullDownRefresh()
+		checkInitialLoaded()
+	}
+
+	function loadList (reset: boolean): void {
+		if (loading.value) {
+			return
+		}
+		if (!reset && finished.value) {
+			return
+		}
+		if (reset) {
+			page.value = 1
+			finished.value = false
+		}
+		loading.value = true
+		let url = '/forum_article/public?pageNo=' + page.value + '&pageSize=' + pageSize.value
+		if (selectedTagId.value.length > 0) {
+			url += '&tag=' + selectedTagId.value
+		}
+		get(url, (res) => {
+			const body = res.getJSON('data')
+			if (body == null) {
+				finishLoading()
+				return
+			}
+			const items = body.getArray<UTSJSONObject>('data')
+			if (items != null) {
+				appendArticles(items, reset)
+			}
+			const totalCount = body.getNumber('totalCount', 0)
+			if (list.value.length >= totalCount || (items != null && items.length < pageSize.value)) {
+				finished.value = true
+			} else {
+				page.value += 1
+			}
+			finishLoading()
+		}, (message) => {
+			finishLoading()
+			uni.showToast({ title: message, icon: 'none' })
+		})
+	}
+
+	function onSwiperChange (event: SwiperChangeEvent): void {
+		const current = event.detail.current
+		swiperIndex.value = current
+	}
+
+	function selectPresetCategory (index: number): void {
+		customMode.value = false
+		selectedTagId.value = presetTagIds.value[index]
+		selectedTagTitle.value = index === 0 ? '' : presetTagTitles.value[index]
+		loadList(true)
+	}
+
+	function openTagPicker (): void {
+		pickerVisible.value = true
+		pickerLevel1Id.value = ''
+		pickerLevel2Id.value = ''
+		pickerSelectedTagId.value = ''
+		pickerSelectedTagTitle.value = ''
+		pickerLevel1Tags.value = childrenTags('0', 1)
+		pickerLevel2Tags.value = []
+		pickerLevel3Tags.value = []
+	}
+
+	function closePicker (): void {
+		pickerVisible.value = false
+	}
+
+	function selectPickerLevel1 (tag: PrescriptionTag): void {
+		pickerLevel1Id.value = tag.id
+		pickerLevel2Id.value = ''
+		pickerSelectedTagId.value = tag.id
+		pickerSelectedTagTitle.value = tag.title
+		pickerLevel2Tags.value = childrenTags(tag.id, 2)
+		pickerLevel3Tags.value = []
+	}
+
+	function selectPickerLevel2 (tag: PrescriptionTag): void {
+		pickerLevel2Id.value = tag.id
+		pickerSelectedTagId.value = tag.id
+		pickerSelectedTagTitle.value = tag.title
+		pickerLevel3Tags.value = childrenTags(tag.id, 3)
+	}
+
+	function selectPickerLevel3 (tag: PrescriptionTag): void {
+		pickerSelectedTagId.value = tag.id
+		pickerSelectedTagTitle.value = tag.title
+	}
+
+	function confirmPicker (): void {
+		if (pickerSelectedTagId.value.length === 0) {
+			uni.showToast({ title: '请选择康复标签', icon: 'none' })
+			return
+		}
+		customMode.value = true
+		customTagId.value = pickerSelectedTagId.value
+		selectedTagTitle.value = pickerSelectedTagTitle.value
+		customTagTitle.value = fullTagTitle(pickerSelectedTagId.value)
+		if (customTagTitle.value.length === 0) {
+			customTagTitle.value = pickerSelectedTagTitle.value
+		}
+		selectedTagId.value = customTagId.value
+		pickerVisible.value = false
+		loadList(true)
+	}
+
+	function resetCustomTag (): void {
+		customMode.value = false
+		customTagId.value = ''
+		customTagTitle.value = ''
+		selectedTagId.value = ''
+		selectedTagTitle.value = ''
+		loadList(true)
+	}
+
+	onLoad(() => {
+		const sys = uni.getSystemInfoSync()
+		const status = sys.statusBarHeight
+		statusBarHeight.value = status
+		loadTags()
+		loadCarousel()
+		loadList(true)
+	})
+
+	onReachBottom(() => {
+		loadList(false)
+	})
+
+	onPullDownRefresh(() => {
+		loadCarousel()
+		loadList(true)
+	})
 </script>
 
 <style lang="scss">
-	.logo {
-		height: 100px;
-		width: 100px;
-		margin: 100px auto 25px auto;
+	.page {
+		background: #F7F8FA;
+		min-height: 100vh;
 	}
 
-	.title {
-		font-size: 18px;
-		color: #8f8f94;
+	.nav-space {
+		background: #F7F8FA;
+	}
+
+	.skeleton-page {
+		min-height: 100vh;
+		background: #F7F8FA;
+	}
+
+	.skeleton-block {
+		background: #EAECF0;
+		border-radius: 12px;
+	}
+
+	.skeleton-header {
+		height: 52px;
+		margin: 8px 16px 0;
+	}
+
+	.skeleton-carousel {
+		height: 150px;
+		margin: 14px 16px 0;
+		border-radius: 16px;
+	}
+
+	.skeleton-categories {
+		display: flex;
+		flex-direction: row;
+		gap: 8px;
+		padding: 14px 16px;
+	}
+
+	.skeleton-chip {
+		width: 64px;
+		height: 32px;
+		border-radius: 999px;
+		background: #EAECF0;
+	}
+
+	.skeleton-list {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+		padding: 0 16px;
+	}
+
+	.skeleton-card {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		background: #FFFFFF;
+		border-radius: 16px;
+		padding: 14px;
+	}
+
+	.skeleton-line {
+		height: 14px;
+		border-radius: 7px;
+		background: #E3E6EB;
+	}
+
+	.skeleton-line-short {
+		width: 40%;
+	}
+
+	.skeleton-line-long {
+		width: 90%;
+	}
+
+	.header {
+		background: #F7F8FA;
+		padding: 8px 16px 0;
+		display: flex;
+		flex-direction: row;
+		align-items: flex-start;
+
+		.header-copy {
+			display: flex;
+			flex-direction: column;
+			gap: 2px;
+		}
+
+		.header-title {
+			font-size: 22px;
+			font-weight: 600;
+			color: #1A1D24;
+			line-height: 30px;
+			text-shadow: 0px 4px 4px rgba(0, 0, 0, 0.25);
+		}
+
+		.header-subtitle {
+			font-size: 11px;
+			color: #9CA3AF;
+			line-height: 16px;
+		}
+	}
+
+	.carousel-wrap {
+		position: relative;
+		margin-top: 12px;
+	}
+
+	.carousel {
+		width: 100%;
+		height: 150px;
+	}
+
+	.carousel-dots {
+		position: absolute;
+		right: 16px;
+		bottom: 12px;
+		display: flex;
+		flex-direction: row;
+		gap: 4px;
+		z-index: 2;
+	}
+
+	.carousel-dot {
+		width: 4px;
+		height: 4px;
+		border-radius: 999px;
+		background: rgba(255, 255, 255, 0.4);
+	}
+
+	.carousel-dot-active {
+		width: 16px;
+		background: #FFFFFF;
+	}
+
+	.carousel-item {
+		position: relative;
+		width: 100%;
+		height: 150px;
+		overflow: hidden;
+		border-radius: 16px;
+	}
+
+	.carousel-image {
+		width: 100%;
+		height: 150px;
+	}
+
+	.carousel-mask {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		height: 150px;
+		background: linear-gradient(180deg, rgba(0, 0, 0, 0.05) 0%, rgba(0, 0, 0, 0.72) 100%);
+	}
+
+	.carousel-body {
+		position: absolute;
+		left: 16px;
+		right: 16px;
+		top: 12px;
+		bottom: 12px;
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		justify-content: space-between;
+	}
+
+	.hot-badge {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 4px;
+		background: rgba(0, 0, 0, 0.4);
+		padding: 5px 10px 5px 8px;
+		border-radius: 999px;
+	}
+
+	.hot-icon {
+		font-size: 12px;
+		line-height: 12px;
+	}
+
+	.hot-text {
+		font-size: 11px;
+		font-weight: 500;
+		color: #FFFFFF;
+	}
+
+	.carousel-title {
+		font-size: 16px;
+		font-weight: 600;
+		color: #FFFFFF;
+		line-height: 24px;
+		max-width: 300px;
+		word-break: break-all;
+	}
+
+	.carousel-count {
+		font-size: 11px;
+		color: rgba(255, 255, 255, 0.8);
+	}
+
+	.category-wrap {
+		padding: 14px 16px;
+	}
+
+	.category-head {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.tag-pick-icon {
+		width: 28px;
+		height: 28px;
+		margin-right: 8px;
+		flex-shrink: 0;
+	}
+
+	.category-scroll {
+		flex: 1;
+		white-space: nowrap;
+	}
+
+	.category-row {
+		display: flex;
+		flex-direction: row;
+		gap: 8px;
+	}
+
+	.category-chip {
+		display: inline-flex;
+		align-items: center;
+		padding: 8px 16px;
+		border-radius: 999px;
+		background: #FFFFFF;
+		font-size: 13px;
+		font-weight: 500;
+		color: #4B5563;
+	}
+
+	.category-chip-active {
+		background: #FF6B35;
+		color: #FFFFFF;
+	}
+
+	.custom-tag-bar {
+		width: 100%;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		min-height: 44px;
+		padding-left: 12px;
+		padding-right: 8px;
+		background: #FFFFFF;
+		border: 1px solid #FFE1D0;
+		border-radius: 8px;
+	}
+
+	.custom-tag-title {
+		flex: 1;
+		font-size: 13px;
+		font-weight: 500;
+		color: #FF6B35;
+		word-break: break-all;
+	}
+
+	.custom-tag-close {
+		width: 28px;
+		height: 28px;
+		margin-left: 8px;
+		border-radius: 50%;
+		background: #FFF3EC;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.custom-tag-close-text {
+		font-size: 14px;
+		color: #FF6B35;
+	}
+
+	.picker-mask {
+		position: fixed;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		background: rgba(17, 17, 17, 0.5);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 100;
+	}
+
+	.picker-panel {
+		width: 88%;
+		max-width: 360px;
+		background: #FFFFFF;
+		border-radius: 16px;
+		overflow: hidden;
+	}
+
+	.picker-header {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		padding: 16px;
+		border-bottom: 1px solid #F1F2F5;
+	}
+
+	.picker-title {
+		font-size: 16px;
+		font-weight: 600;
+		color: #1A1D24;
+	}
+
+	.picker-header-close {
+		padding: 4px 8px;
+	}
+
+	.picker-header-close-text {
+		font-size: 12px;
+		color: #9CA3AF;
+	}
+
+	.picker-scroll {
+		max-height: 430px;
+		padding: 4px 16px 8px;
+	}
+
+	.picker-level {
+		padding-top: 12px;
+	}
+
+	.picker-level-title {
+		font-size: 12px;
+		font-weight: 600;
+		color: #6B7280;
+		margin-bottom: 8px;
+		display: block;
+	}
+
+	.picker-options {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
+	.picker-option {
+		display: inline-flex;
+		align-items: center;
+		padding: 8px 12px;
+		border-radius: 999px;
+		background: #F4F5F7;
+		font-size: 12px;
+		color: #4B5563;
+	}
+
+	.picker-option-active {
+		background: #FF6B35;
+		color: #FFFFFF;
+	}
+
+	.picker-footer {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		padding: 12px 16px;
+		border-top: 1px solid #F1F2F5;
+	}
+
+	.picker-selected {
+		flex: 1;
+		margin-right: 12px;
+	}
+
+	.picker-selected-text {
+		font-size: 13px;
+		font-weight: 500;
+		color: #FF6B35;
+		word-break: break-all;
+	}
+
+	.picker-selected-placeholder {
+		font-size: 12px;
+		color: #9CA3AF;
+	}
+
+	.picker-actions {
+		display: flex;
+		flex-direction: row;
+		gap: 8px;
+	}
+
+	.picker-btn {
+		height: 32px;
+		padding: 0 14px;
+		border-radius: 999px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 13px;
+	}
+
+	.picker-btn-cancel {
+		background: #F4F5F7;
+		color: #6B7280;
+	}
+
+	.picker-btn-ok {
+		background: #FF6B35;
+		color: #FFFFFF;
+	}
+
+	.article-list {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+		padding-bottom: 24px;
+	}
+
+	.article-card {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		background: #FFFFFF;
+		border-radius: 16px;
+		padding: 14px;
+		margin: 0 16px;
+		box-shadow: 0 8px 24px rgba(23, 26, 36, 0.04);
+	}
+
+	.author-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.author-info {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.author-avatar {
+		width: 32px;
+		height: 32px;
+		border-radius: 50%;
+		background: #EEF0F4;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.author-avatar-empty {
+		color: #6B7280;
+		font-size: 14px;
+	}
+
+	.author-name {
+		font-size: 13px;
+		font-weight: 500;
+		color: #1A1D24;
+	}
+
+	.author-time {
+		font-size: 11px;
+		color: #9CA3AF;
+	}
+
+	.content-row {
+		display: flex;
+		flex-direction: row;
+		align-items: flex-start;
+		gap: 12px;
+	}
+
+	.content-copy {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.article-title {
+		font-size: 15px;
+		font-weight: 600;
+		color: #1A1D24;
+		line-height: 22px;
+		word-break: break-all;
+	}
+
+	.article-summary {
+		font-size: 13px;
+		color: #6B7280;
+		line-height: 20px;
+		word-break: break-all;
+	}
+
+	.article-cover {
+		width: 96px;
+		height: 72px;
+		border-radius: 8px;
+		flex-shrink: 0;
+	}
+
+	.tag-row {
+		display: flex;
+		flex-direction: row;
+		gap: 6px;
+	}
+
+	.tag-chip {
+		padding: 4px 8px;
+		background: #FFF3EC;
+		border-radius: 6px;
+	}
+
+	.tag-text {
+		font-size: 11px;
+		font-weight: 500;
+		color: #FF6B35;
+	}
+
+	.article-tag-row {
+		display: flex;
+		flex-direction: row;
+	}
+
+	.article-tag-chip {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		height: 24px;
+		padding-left: 8px;
+		padding-right: 8px;
+		background: #FFF3EC;
+		border-radius: 4px;
+	}
+
+	.article-tag-text {
+		font-family: "Noto Sans SC", sans-serif;
+		font-size: 11px;
+		color: #FF6B35;
+	}
+
+	.interact-row {
+		justify-content: space-between;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding: 2px 12px 0;
+	}
+
+	.interact-group {
+		justify-content: center;
+		flex: 1;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.interact-group-left {
+		justify-content: flex-start;
+	}
+
+	.interact-group-right {
+		justify-content: flex-end;
+	}
+
+	.interact-icon-img {
+		width: 16px;
+		height: 16px;
+	}
+
+	.interact-count {
+		font-size: 11px;
+		color: #9CA3AF;
+	}
+
+	.list-status {
+		padding: 20px 0 30px;
 		text-align: center;
+		color: #9CA3AF;
+		font-size: 12px;
 	}
 </style>

@@ -1,0 +1,40 @@
+<template>
+	<view class="page">
+		<view class="nav-space" :style="{ height: statusBarHeight + 'px' }"></view>
+		<view class="container">
+			<text class="title">康复</text>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	const statusBarHeight = ref(24)
+
+	onLoad(() => {
+		const sys = uni.getSystemInfoSync()
+		const status = sys.statusBarHeight
+		statusBarHeight.value = status
+	})
+</script>
+
+<style lang="scss">
+	.page {
+		flex: 1;
+		background: #F7F8FA;
+	}
+
+	.nav-space {
+		background: #F7F8FA;
+	}
+
+	.container {
+		flex: 1;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.title {
+		font-size: 18px;
+		color: #333;
+	}
+</style>

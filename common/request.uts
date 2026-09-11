@@ -1,0 +1,57 @@
+import { API_BASE_URL } from './config'
+
+export function buildHeader (): UTSJSONObject {
+	const header = new UTSJSONObject()
+	header.set('Content-Type', 'application/json')
+	const token = uni.getStorageSync('token') as string | null
+	if (token != null && token.length > 0) {
+		header.set('Authorization', 'Bearer ' + token)
+	}
+	return header
+}
+
+export function get (
+	url: string,
+	success: (data: UTSJSONObject) => void,
+	fail: (message: string) => void
+): void {
+	uni.request<UTSJSONObject>({
+		url: API_BASE_URL + url,
+		method: 'GET',
+		header: buildHeader(),
+		success: (res) => {
+			if (res.data == null) {
+				fail('请求数据为空')
+			} else {
+				success(res.data)
+			}
+		},
+		fail: (err) => {
+			fail(err.errMsg)
+		}
+	})
+}
+
+export function post (
+	url: string,
+	data: UTSJSONObject,
+	success: (data: UTSJSONObject) => void,
+	fail: (message: string) => void
+): void {
+	uni.request<UTSJSONObject>({
+		url: API_BASE_URL + url,
+		method: 'POST',
+		data: data,
+		header: buildHeader(),
+		success: (res) => {
+			if (res.data == null) {
+				fail('请求数据为空')
+			} else {
+				success(res.data)
+			}
+		},
+		fail: (err) => {
+			fail(err.errMsg)
+		}
+	})
+}
