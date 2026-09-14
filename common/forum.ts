@@ -123,6 +123,24 @@ export class PrescriptionTag {
 	}
 }
 
+export function lastTagName (fullName: string): string {
+	const marker = ' - '
+	let lastIndex = -1
+	let i = 0
+	while (i <= fullName.length - marker.length) {
+		if (fullName.substring(i, i + marker.length) === marker) {
+			lastIndex = i
+			i += marker.length
+		} else {
+			i += 1
+		}
+	}
+	if (lastIndex < 0) {
+		return fullName
+	}
+	return fullName.substring(lastIndex + marker.length)
+}
+
 export function formatCount (count: number): string {
 	if (count >= 10000) {
 		return (count / 10000).toFixed(1) + " 万人正在关注"
@@ -154,5 +172,131 @@ export function formatArticleTime (createdAt: string): string {
 	if (dayDiff == 1) {
 		return "昨天 " + created.format("HH:mm")
 	}
+	if (now.isSame(created, "year")) {
+		return created.format("MM-DD HH:mm")
+	}
 	return created.format("YYYY-MM-DD HH:mm")
+}
+
+export class ForumArticleDetail {
+	id: string = ""
+	title: string = ""
+	content: string = ""
+	cover: string = ""
+	name: string = ""
+	avatar: string = ""
+	likeNum: number = 0
+	commentNum: number = 0
+	collectNum: number = 0
+	viewNum: number = 0
+	isLiked: boolean = false
+	isCollected: boolean = false
+	tagName: string = ""
+	timeText: string = ""
+
+	initFromJSON (json: UTSJSONObject): void {
+		const id = json.getString("id")
+		if (id != null) {
+			this.id = id
+		}
+		const title = json.getString("title")
+		if (title != null) {
+			this.title = title
+		}
+		const content = json.getString("content")
+		if (content != null) {
+			this.content = content
+		}
+		const cover = json.getString("cover")
+		if (cover != null) {
+			this.cover = cover
+		}
+		const name = json.getString("name")
+		if (name != null) {
+			this.name = name
+		}
+		const avatar = json.getString("avatar")
+		if (avatar != null) {
+			this.avatar = avatar
+		}
+		const likeNum = json.getNumber("like_num")
+		if (likeNum != null) {
+			this.likeNum = likeNum
+		}
+		const commentNum = json.getNumber("comment_num")
+		if (commentNum != null) {
+			this.commentNum = commentNum
+		}
+		const collectNum = json.getNumber("collect_num")
+		if (collectNum != null) {
+			this.collectNum = collectNum
+		}
+		const viewNum = json.getNumber("view_num")
+		if (viewNum != null) {
+			this.viewNum = viewNum
+		}
+		const isLiked = json.getBoolean("is_liked")
+		if (isLiked != null) {
+			this.isLiked = isLiked
+		}
+		const isCollected = json.getBoolean("is_collected")
+		if (isCollected != null) {
+			this.isCollected = isCollected
+		}
+		const tagName = json.getString("tag_name")
+		if (tagName != null) {
+			this.tagName = tagName
+		}
+		let timeValue = ""
+		const publishTime = json.getString("publish_time")
+		if (publishTime != null && publishTime.length > 0) {
+			timeValue = publishTime
+		} else {
+			const createdAt = json.getString("created_at")
+			if (createdAt != null) {
+				timeValue = createdAt
+			}
+		}
+		if (timeValue.length >= 16) {
+			this.timeText = formatArticleTime(timeValue)
+		}
+	}
+}
+
+export class ForumCommentItem {
+	id: string = ""
+	content: string = ""
+	name: string = ""
+	avatar: string = ""
+	toName: string = ""
+	timeText: string = ""
+	floor: number = 0
+
+	initFromJSON (json: UTSJSONObject, floorNumber: number): void {
+		this.floor = floorNumber
+		const id = json.getString("id")
+		if (id != null) {
+			this.id = id
+		}
+		const content = json.getString("content")
+		if (content != null) {
+			this.content = content
+		}
+		const name = json.getString("name")
+		if (name != null) {
+			this.name = name
+		}
+		const avatar = json.getString("avatar")
+		if (avatar != null) {
+			this.avatar = avatar
+		}
+		const toName = json.getString("to_name")
+		if (toName != null) {
+			this.toName = toName
+		}
+		const createdAt = json.getString("created_at")
+		if (createdAt != null && createdAt.length >= 16) {
+			this.timeText = formatArticleTime(createdAt)
+		}
+	}
 }

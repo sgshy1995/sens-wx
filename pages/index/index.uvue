@@ -44,12 +44,18 @@
 				<swiper
 					v-if="carousel.length > 0"
 					class="carousel"
+					:key="swiperKey"
 					circular
+					:autoplay="swiperAutoplay"
+					:interval="swiperInterval"
 					:current="swiperIndex"
 					@change="onSwiperChange"
+					@touchstart="onSwiperTouchStart"
+					@touchend="onSwiperTouchEnd"
+					@touchcancel="onSwiperTouchEnd"
 				>
 					<swiper-item v-for="(item, index) in carousel" :key="item.id + '-' + index">
-						<view class="carousel-item">
+						<view class="carousel-item" @click="openArticleDetail(item)">
 							<image class="carousel-image" :src="resolveFileUrl(item.cover)" mode="aspectFill"></image>
 							<view class="carousel-mask"></view>
 							<view class="carousel-body">
@@ -94,7 +100,7 @@
 			</view>
 
 			<view class="article-list">
-				<view v-for="(item, index) in list" :key="item.id + '-' + index" class="article-card">
+				<view v-for="(item, index) in list" :key="item.id + '-' + index" class="article-card" @click="openArticleDetail(item)">
 					<view class="author-row">
 						<view class="author-info">
 							<image v-if="item.avatar" class="author-avatar" :src="resolveFileUrl(item.avatar)" mode="aspectFill"></image>
@@ -221,7 +227,7 @@
 
 <script setup lang="uts">
 	import { get } from '../../common/request'
-	import { ForumArticle, PrescriptionTag, formatCount, resolveFileUrl } from '../../common/forum'
+	import { ForumArticle, PrescriptionTag, formatCount, lastTagName, resolveFileUrl } from '../../common/forum'
 
 	const statusBarHeight = ref(24)
 	const carousel = ref<ForumArticle[]>([])
@@ -229,6 +235,11 @@
 	const page = ref(1)
 	const pageSize = ref(10)
 	const swiperIndex = ref(0)
+	const swiperAutoplay = ref(false)
+	const swiperInterval = ref(5000)
+	const swiperKey = ref(0)
+	const swiperTouching = ref(false)
+	const swiperRestartVersion = ref(0)
 	const loading = ref(false)
 	const finished = ref(false)
 
@@ -296,24 +307,6 @@
 			parentId = allTags.value[parentIndex].parentId
 		}
 		return title
-	}
-
-	function lastTagName (fullName: string): string {
-		const marker = ' - '
-		let lastIndex = -1
-		let i = 0
-		while (i <= fullName.length - marker.length) {
-			if (fullName.substring(i, i + marker.length) === marker) {
-				lastIndex = i
-				i += marker.length
-			} else {
-				i += 1
-			}
-		}
-		if (lastIndex < 0) {
-			return fullName
-		}
-		return fullName.substring(lastIndex + marker.length)
 	}
 
 	function displayTagTitle (item: ForumArticle): string {
@@ -398,7 +391,7 @@
 				item.initFromJSON(items[i])
 				parsed.push(item)
 			}
-			carousel.value = parsed
+			rebuildCarousel(parsed)
 		}, (message) => {
 			uni.showToast({ title: message, icon: 'none' })
 		})
@@ -450,9 +443,48 @@
 		})
 	}
 
+	function restartCarouselTimer (delay: number): void {
+		swiperRestartVersion.value += 1
+		const version = swiperRestartVersion.value
+		swiperAutoplay.value = false
+		setTimeout(() => {
+			if (version !== swiperRestartVersion.value || swiperTouching.value || carousel.value.length <= 1) {
+				return
+			}
+			swiperAutoplay.value = true
+		}, delay)
+	}
+
+	function rebuildCarousel (items: ForumArticle[]): void {
+		swiperIndex.value = 0
+		swiperKey.value += 1
+		carousel.value = items
+		restartCarouselTimer(0)
+	}
+
+	function onSwiperTouchStart (): void {
+		swiperTouching.value = true
+		swiperRestartVersion.value += 1
+		swiperAutoplay.value = false
+	}
+
+	function onSwiperTouchEnd (): void {
+		swiperTouching.value = false
+		restartCarouselTimer(300)
+	}
+
 	function onSwiperChange (event: SwiperChangeEvent): void {
 		const current = event.detail.current
 		swiperIndex.value = current
+	}
+
+	function openArticleDetail (item: ForumArticle): void {
+		if (item.id.length === 0) {
+			return
+		}
+		uni.navigateTo({
+			url: '/pages/forum-detail/forum-detail?id=' + item.id
+		})
 	}
 
 	function selectPresetCategory (index: number): void {

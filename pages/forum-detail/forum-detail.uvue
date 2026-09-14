@@ -1,0 +1,599 @@
+<template>
+	<view class="page">
+		<view class="nav-space" :style="{ height: statusBarHeight + 'px' }"></view>
+		<view class="nav-row">
+			<view class="back-button" @click="goBack">
+				<text class="back-glyph">‹</text>
+			</view>
+			<text class="nav-title">帖子详情</text>
+			<view class="more-button">
+				<view class="more-dot"></view>
+				<view class="more-dot"></view>
+				<view class="more-dot"></view>
+			</view>
+		</view>
+
+		<view v-if="loadingArticle" class="loading-wrap">
+			<text class="loading-text">加载中...</text>
+		</view>
+
+		<view v-else-if="!hasArticle" class="empty-state">
+			<image class="empty-icon" src="/static/icons/ic-empty.svg" mode="aspectFit"></image>
+			<text class="empty-text">帖子不存在或已删除</text>
+		</view>
+
+		<template v-else>
+			<view class="article-block">
+				<image v-if="article.cover.length > 0" class="article-cover" :src="resolveFileUrl(article.cover)" mode="aspectFill"></image>
+
+				<view class="article-main">
+					<text class="article-title">{{ article.title }}</text>
+
+					<view class="author-row">
+						<image v-if="article.avatar.length > 0" class="author-avatar" :src="resolveFileUrl(article.avatar)" mode="aspectFill"></image>
+						<view v-else class="author-avatar author-avatar-empty">
+							<text>{{ article.name.length > 0 ? article.name.substring(0, 1) : '康' }}</text>
+						</view>
+						<view class="author-copy">
+							<text class="author-name">{{ article.name.length > 0 ? article.name : '康复用户' }}</text>
+							<text class="author-time">{{ article.timeText }}</text>
+						</view>
+						<view class="follow-button">
+							<text class="follow-text">+ 关注</text>
+						</view>
+					</view>
+
+					<rich-text v-if="article.content.length > 0" class="article-content" :nodes="article.content"></rich-text>
+
+					<view v-if="article.tagName.length > 0" class="tag-row">
+						<view class="tag-chip">
+							<text class="tag-text">{{ lastTagName(article.tagName) }}</text>
+						</view>
+					</view>
+				</view>
+			</view>
+
+			<view class="divider"></view>
+
+			<view class="comments-section">
+				<text class="comments-title">全部评论 · {{ article.commentNum }}</text>
+
+				<view v-if="commentsReady && comments.length === 0" class="comments-empty">
+					<image class="comments-empty-icon" src="/static/icons/ic-empty.svg" mode="aspectFit"></image>
+					<text class="comments-empty-text">暂无评论</text>
+				</view>
+
+				<view v-else class="comment-list">
+					<view v-for="(item, index) in comments" :key="item.id + '-' + index" class="comment-item">
+						<image v-if="item.avatar.length > 0" class="comment-avatar" :src="resolveFileUrl(item.avatar)" mode="aspectFill"></image>
+						<view v-else class="comment-avatar comment-avatar-empty">
+							<text>{{ item.name.length > 0 ? item.name.substring(0, 1) : '评' }}</text>
+						</view>
+						<view class="comment-content-wrap">
+							<text class="comment-name">{{ item.name.length > 0 ? item.name : '康复用户' }}</text>
+							<text class="comment-content">
+								<text v-if="item.toName.length > 0" class="comment-reply">回复 @{{ item.toName }}：</text>{{ item.content }}
+							</text>
+							<text class="comment-meta">{{ item.floor }} 楼 · {{ item.timeText }}</text>
+						</view>
+					</view>
+				</view>
+
+				<view v-if="loadingComments" class="comment-status"><text>加载中...</text></view>
+				<view v-else-if="finishedComments && comments.length > 0" class="comment-status"><text>已经到底了</text></view>
+			</view>
+		</template>
+
+		<view class="action-bar">
+			<view class="action-inner">
+				<view class="comment-input" @click="onActionTap">
+					<text class="comment-placeholder">说点什么…</text>
+				</view>
+				<view class="action-item" @click="onActionTap">
+					<image class="action-icon" src="/static/icons/ic-comment.svg" mode="aspectFit"></image>
+					<text class="action-count">{{ article.commentNum }}</text>
+				</view>
+				<view class="action-item" @click="onActionTap">
+					<image class="action-icon" :src="article.isCollected ? '/static/icons/ic-star-active.svg' : '/static/icons/ic-star.svg'" mode="aspectFit"></image>
+					<text class="action-count">{{ article.collectNum }}</text>
+				</view>
+				<view class="action-item" @click="onActionTap">
+					<image class="action-icon" :src="article.isLiked ? '/static/icons/ic-like-active.svg' : '/static/icons/ic-like.svg'" mode="aspectFit"></image>
+					<text class="action-count">{{ article.likeNum }}</text>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { get } from '../../common/request'
+	import { ForumArticleDetail, ForumCommentItem, lastTagName, resolveFileUrl } from '../../common/forum'
+
+	const statusBarHeight = ref(24)
+	const articleId = ref('')
+	const article = ref(new ForumArticleDetail())
+	const comments = ref<ForumCommentItem[]>([])
+	const hasArticle = ref(false)
+	const loadingArticle = ref(true)
+	const loadingComments = ref(false)
+	const commentsReady = ref(false)
+	const finishedComments = ref(false)
+	const page = ref(1)
+	const pageSize = ref(10)
+
+	function goBack (): void {
+		uni.navigateBack()
+	}
+
+	function onActionTap (): void {
+		uni.showToast({ title: '登录后可操作', icon: 'none' })
+	}
+
+	function appendComments (items: Array<UTSJSONObject>, pageNo: number, reset: boolean): void {
+		const parsed: ForumCommentItem[] = []
+		for (let i = 0; i < items.length; i++) {
+			const item = new ForumCommentItem()
+			const floor = (pageNo - 1) * pageSize.value + i + 1
+			item.initFromJSON(items[i], floor)
+			parsed.push(item)
+		}
+		if (reset) {
+			comments.value = parsed
+		} else {
+			for (let i = 0; i < parsed.length; i++) {
+				comments.value.push(parsed[i])
+			}
+		}
+	}
+
+	function finishCommentLoading (): void {
+		loadingComments.value = false
+		commentsReady.value = true
+	}
+
+	function loadComments (reset: boolean): void {
+		if (loadingComments.value || articleId.value.length === 0 || !hasArticle.value) {
+			return
+		}
+		if (!reset && finishedComments.value) {
+			return
+		}
+		if (reset) {
+			page.value = 1
+			finishedComments.value = false
+			commentsReady.value = false
+		}
+		loadingComments.value = true
+		const pageNo = page.value
+		const url = '/forum_comment/public/article/' + articleId.value + '?pageNo=' + pageNo + '&pageSize=' + pageSize.value
+		get(url, (res) => {
+			const body = res.getJSON('data')
+			if (body == null) {
+				finishCommentLoading()
+				return
+			}
+			const items = body.getArray<UTSJSONObject>('data')
+			if (items != null) {
+				appendComments(items, pageNo, reset)
+			}
+			const totalCount = body.getNumber('totalCount', 0)
+			article.value.commentNum = totalCount
+			if (comments.value.length >= totalCount || (items != null && items.length < pageSize.value)) {
+				finishedComments.value = true
+			} else {
+				page.value += 1
+			}
+			finishCommentLoading()
+		}, (message) => {
+			finishCommentLoading()
+			uni.showToast({ title: message, icon: 'none' })
+		})
+	}
+
+	function loadArticle (): void {
+		if (articleId.value.length === 0) {
+			loadingArticle.value = false
+			return
+		}
+		get('/forum_article/public/id/' + articleId.value, (res) => {
+			const body = res.getJSON('data')
+			if (body == null) {
+				loadingArticle.value = false
+				return
+			}
+			const detail = new ForumArticleDetail()
+			detail.initFromJSON(body)
+			article.value = detail
+			hasArticle.value = true
+			loadingArticle.value = false
+			loadComments(true)
+		}, (message) => {
+			loadingArticle.value = false
+			uni.showToast({ title: message, icon: 'none' })
+		})
+	}
+
+	onLoad((options) => {
+		const sys = uni.getSystemInfoSync()
+		const status = sys.statusBarHeight
+		statusBarHeight.value = status
+		const id = options['id']
+		if (id != null) {
+			articleId.value = id
+		}
+		loadArticle()
+	})
+
+	onReachBottom(() => {
+		loadComments(false)
+	})
+</script>
+
+<style lang="scss">
+	.page {
+		min-height: 100vh;
+		background: #FFFFFF;
+	}
+
+	.nav-space {
+		background: #FFFFFF;
+	}
+
+	.nav-row {
+		height: 48px;
+		padding-left: 16px;
+		padding-right: 16px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		background: #FFFFFF;
+	}
+
+	.back-button {
+		width: 32px;
+		height: 32px;
+		border-radius: 50%;
+		background: #F7F8FA;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.back-glyph {
+		font-size: 28px;
+		line-height: 28px;
+		color: #1A1D24;
+		margin-top: -3px;
+	}
+
+	.nav-title {
+		flex: 1;
+		margin-left: 12px;
+		font-size: 16px;
+		font-weight: 600;
+		color: #1A1D24;
+	}
+
+	.more-button {
+		width: 20px;
+		height: 4px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.more-dot {
+		width: 4px;
+		height: 4px;
+		border-radius: 50%;
+		background: #6B7280;
+	}
+
+	.loading-wrap {
+		padding: 80px 20px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.loading-text {
+		font-size: 13px;
+		color: #9CA3AF;
+	}
+
+	.empty-state {
+		padding: 80px 20px 120px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	}
+
+	.empty-icon {
+		width: 180px;
+		height: 180px;
+	}
+
+	.empty-text {
+		margin-top: 12px;
+		font-size: 13px;
+		color: #9CA3AF;
+	}
+
+	.article-block {
+		padding: 8px 20px 4px;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.article-main {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
+
+	.article-title {
+		font-size: 20px;
+		font-weight: 700;
+		line-height: 28px;
+		color: #1A1D24;
+		word-break: break-all;
+	}
+
+	.author-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 10px;
+	}
+
+	.author-avatar {
+		width: 36px;
+		height: 36px;
+		border-radius: 50%;
+		background: #EEF0F4;
+		flex-shrink: 0;
+	}
+
+	.author-avatar-empty {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 14px;
+		color: #6B7280;
+	}
+
+	.author-copy {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.author-name {
+		font-size: 13px;
+		font-weight: 600;
+		color: #1A1D24;
+	}
+
+	.author-time {
+		font-size: 11px;
+		color: #9CA3AF;
+	}
+
+	.follow-button {
+		padding: 5px 12px;
+		border-radius: 999px;
+		background: #FFF3EC;
+		flex-shrink: 0;
+	}
+
+	.follow-text {
+		font-size: 12px;
+		font-weight: 600;
+		color: #FF6B35;
+	}
+
+	.article-cover {
+		width: 100%;
+		height: 170px;
+		border-radius: 14px;
+		margin-bottom: 24px;
+		background: #F1F2F5;
+	}
+
+	.article-content {
+		width: 100%;
+		font-size: 14px;
+		line-height: 23px;
+		color: #1A1C24;
+		word-break: break-all;
+	}
+
+	.tag-row {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
+	.tag-chip {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		height: 24px;
+		padding-left: 8px;
+		padding-right: 8px;
+		background: #FFF3EC;
+		border-radius: 4px;
+	}
+
+	.tag-text {
+		font-family: "Noto Sans SC", sans-serif;
+		font-size: 11px;
+		color: #FF6B35;
+	}
+
+	.divider {
+		width: 100%;
+		height: 1px;
+		background: #EEF0F3;
+	}
+
+	.comments-section {
+		padding: 16px 20px 120px;
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+	}
+
+	.comments-title {
+		font-size: 15px;
+		font-weight: 600;
+		color: #1A1D24;
+	}
+
+	.comments-empty {
+		padding: 48px 0 24px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	}
+
+	.comments-empty-icon {
+		width: 140px;
+		height: 140px;
+	}
+
+	.comments-empty-text {
+		margin-top: 8px;
+		font-size: 12px;
+		color: #9CA3AF;
+	}
+
+	.comment-list {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+	}
+
+	.comment-item {
+		display: flex;
+		flex-direction: row;
+		align-items: flex-start;
+		gap: 10px;
+	}
+
+	.comment-avatar {
+		width: 32px;
+		height: 32px;
+		border-radius: 50%;
+		background: #EEF0F4;
+		flex-shrink: 0;
+	}
+
+	.comment-avatar-empty {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 12px;
+		color: #6B7280;
+	}
+
+	.comment-content-wrap {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.comment-name {
+		font-size: 12px;
+		font-weight: 600;
+		color: #6B7280;
+	}
+
+	.comment-content {
+		font-size: 13px;
+		line-height: 20px;
+		color: #1A1D24;
+		word-break: break-all;
+	}
+
+	.comment-reply {
+		color: #FF6B35;
+	}
+
+	.comment-meta {
+		font-size: 10px;
+		color: #9CA3AF;
+	}
+
+	.comment-status {
+		padding: 8px 0 4px;
+		text-align: center;
+		font-size: 12px;
+		color: #9CA3AF;
+	}
+
+	.action-bar {
+		position: fixed;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: #FFFFFF;
+		border-top: 1px solid #EEF0F3;
+		padding-bottom: env(safe-area-inset-bottom);
+		z-index: 20;
+	}
+
+	.action-inner {
+		height: 60px;
+		padding-left: 16px;
+		padding-right: 16px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 14px;
+	}
+
+	.comment-input {
+		flex: 1;
+		height: 36px;
+		padding-left: 12px;
+		padding-right: 12px;
+		border-radius: 999px;
+		background: #F7F8FA;
+		display: flex;
+		align-items: center;
+		justify-content: flex-start;
+	}
+
+	.comment-placeholder {
+		width: 100%;
+		line-height: 36px;
+		text-align: left;
+		font-size: 13px;
+		color: #9CA3AF;
+	}
+
+	.action-item {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 2px;
+		flex-shrink: 0;
+	}
+
+	.action-icon {
+		width: 20px;
+		height: 20px;
+	}
+
+	.action-count {
+		font-size: 10px;
+		color: #9CA3AF;
+	}
+</style>

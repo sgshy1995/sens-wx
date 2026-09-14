@@ -10,6 +10,14 @@
 			}
 		},
 		{
+			"path": "pages/forum-detail/forum-detail",
+			"style": {
+				"navigationBarTitleText": "帖子详情",
+				"navigationStyle": "custom",
+				"backgroundColor": "#FFFFFF"
+			}
+		},
+		{
 			"path": "pages/rehab/rehab",
 			"style": {
 				"navigationBarTitleText": "康复",
