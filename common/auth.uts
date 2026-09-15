@@ -1,0 +1,123 @@
+import { get, post } from './request'
+import dayjs from 'dayjs'
+
+const LOGIN_AGREEMENT_KEY = 'login_agreement_accepted'
+const TOKEN_KEY = 'token'
+const TOKEN_EXPIRATION_KEY = 'token_expiration'
+const LOGIN_TIME_KEY = 'login_time'
+const USER_KEY = 'user'
+
+export function hasLoginAgreement (): boolean {
+	return uni.getStorageSync(LOGIN_AGREEMENT_KEY) === true
+}
+
+export function acceptLoginAgreement (): void {
+	uni.setStorageSync(LOGIN_AGREEMENT_KEY, true)
+}
+
+export function hasLocalToken (): boolean {
+	const token = uni.getStorageSync(TOKEN_KEY) as string | null
+	return token != null && token.length > 0
+}
+
+export function calculateRehabDays (createdAt: string): number {
+	const created = dayjs(createdAt)
+	if (!created.isValid()) {
+		return 1
+	}
+	const days = dayjs().startOf('day').diff(created.startOf('day'), 'day') + 1
+	return days > 1 ? days : 1
+}
+
+export function loginByWechatPhone (
+	phoneCode: string,
+	success: (data: UTSJSONObject) => void,
+	fail: (message: string) => void
+): void {
+	uni.login({
+		provider: 'weixin',
+		success: (loginRes) => {
+			const loginCode = loginRes.code
+			if (loginCode.length === 0) {
+				fail('获取微信登录凭证失败')
+				return
+			}
+
+			const requestData = new UTSJSONObject()
+			requestData.set('login_code', loginCode)
+			requestData.set('phone_code', phoneCode)
+
+			post('/user/wx_login', requestData, (res) => {
+				const code = res.getNumber('code', 0)
+				if (code !== 200) {
+					fail(res.getString('message') ?? '登录失败')
+					return
+				}
+
+				const data = res.getJSON('data')
+				if (data == null) {
+					fail('登录数据为空')
+					return
+				}
+
+				const token = data.getString('token') ?? ''
+				if (token.length === 0) {
+					fail('登录凭证为空')
+					return
+				}
+
+				uni.setStorageSync(TOKEN_KEY, token)
+				uni.setStorageSync(TOKEN_EXPIRATION_KEY, data.getNumber('expiration', 0))
+				uni.setStorageSync(LOGIN_TIME_KEY, Date.now())
+				success(data)
+			}, fail)
+		},
+		fail: (error) => {
+			fail(error.errMsg)
+		}
+	})
+}
+
+export function fetchCurrentUser (
+	success: (user: UTSJSONObject) => void,
+	fail: (message: string) => void
+): void {
+	get('/user', (res) => {
+		const code = res.getNumber('code', 0)
+		if (code !== 200) {
+			fail(res.getString('message') ?? '获取用户信息失败')
+			return
+		}
+
+		const user = res.getJSON('data')
+		if (user == null) {
+			fail('用户信息为空')
+			return
+		}
+
+		uni.setStorageSync(USER_KEY, user)
+		success(user)
+	}, fail)
+}
+
+export function fetchCurrentUserInfo (
+	success: (userInfo: UTSJSONObject) => void,
+	fail: (message: string) => void
+): void {
+	get('/user_info/user', (res) => {
+		const code = res.getNumber('code', 0)
+		if (code !== 200) {
+			fail(res.getString('message') ?? '获取账户信息失败')
+			return
+		}
+
+		const userInfo = res.getJSON('data')
+		if (userInfo == null) {
+			fail('账户信息为空')
+			return
+		}
+
+		uni.setStorageSync('user_info', userInfo)
+		success(userInfo)
+	}, fail)
+}

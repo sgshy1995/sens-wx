@@ -1,25 +1,349 @@
 <template>
 	<view class="page">
-		<view class="nav-space" :style="{ height: statusBarHeight + 'px' }"></view>
-		<view class="container">
-			<text class="title">我的</text>
+		<view class="nav-space" :style="{ height: navSpaceHeight + 'px' }"></view>
+
+		<view class="mine-content">
+			<view class="profile-card">
+				<button
+					class="tap-button user-row"
+					hover-class="none"
+					:open-type="canTriggerPhoneLogin() ? 'getPhoneNumber' : ''"
+					@click="handleLoginTap"
+					@getphonenumber="onGetPhoneNumber"
+				>
+					<image v-if="avatarUrl.length > 0" class="avatar" :src="avatarUrl" mode="aspectFit"></image>
+					<image v-else class="avatar" src="/static/icons/ic-avatar.svg" mode="aspectFit"></image>
+					<view class="user-copy">
+						<text class="user-name">{{ userName }}</text>
+						<view v-if="loggedIn" class="user-tags">
+							<view class="user-tag user-tag-member"><text class="user-tag-member-text">康复会员</text></view>
+							<view class="user-tag user-tag-streak"><text class="user-tag-streak-text">已坚持 {{ rehabDays }} 天</text></view>
+						</view>
+						<text v-else class="user-hint">{{ userHint }}</text>
+					</view>
+					<image class="chevron-icon" src="/static/icons/ic-chevron.svg" mode="aspectFit"></image>
+				</button>
+
+				<view class="divider"></view>
+
+				<view class="stats-row">
+					<view class="stat-item">
+						<text class="stat-value">{{ loggedIn ? rehabDays : '—' }}</text>
+						<text class="stat-label">康复天数</text>
+					</view>
+					<view class="stat-item">
+						<text class="stat-value">{{ loggedIn ? schemeCount : '—' }}</text>
+						<text class="stat-label">康复方案</text>
+					</view>
+					<view class="stat-item">
+						<text class="stat-value">{{ loggedIn ? collectCount : '—' }}</text>
+						<text class="stat-label">收藏</text>
+					</view>
+					<view class="stat-item">
+						<text class="stat-value">{{ loggedIn ? likeCount : '—' }}</text>
+						<text class="stat-label">点赞</text>
+					</view>
+				</view>
+			</view>
+
+			<view v-if="loggedIn" class="account-card">
+				<view class="account-section balance-section">
+					<view class="account-head">
+						<image class="account-icon" src="/static/icons/ic-credit.svg" mode="aspectFit"></image>
+						<text class="account-label">余额</text>
+					</view>
+					<text class="account-value">¥ {{ balanceText }}</text>
+					<view class="recharge-button">
+						<text class="recharge-button-text">充值</text>
+					</view>
+				</view>
+
+				<view class="account-divider"></view>
+
+				<view class="account-section credit-section">
+					<view class="account-head">
+						<image class="account-icon" src="/static/icons/ic-credit.svg" mode="aspectFit"></image>
+						<text class="account-label">积分</text>
+					</view>
+					<text class="account-value">{{ integralText }}</text>
+				</view>
+			</view>
+
+			<view v-else class="login-card">
+				<view class="login-copy">
+					<view class="login-title-row">
+						<image class="phone-icon" src="/static/icons/ic-phone.svg" mode="aspectFit"></image>
+						<text class="login-title">手机号一键登录</text>
+					</view>
+					<text class="login-subtitle">登录后同步钱包余额与康复档案</text>
+				</view>
+				<button
+					class="tap-button login-button"
+					hover-class="none"
+					:open-type="canTriggerPhoneLogin() ? 'getPhoneNumber' : ''"
+					@click="handleLoginTap"
+					@getphonenumber="onGetPhoneNumber"
+				>
+					<text class="login-button-text">立即登录</text>
+				</button>
+			</view>
+
+			<view class="menu-card">
+				<button
+					class="tap-button menu-row"
+					hover-class="none"
+					:open-type="canTriggerPhoneLogin() ? 'getPhoneNumber' : ''"
+					@click="handleLoginTap"
+					@getphonenumber="onGetPhoneNumber"
+				>
+					<image class="menu-icon" src="/static/icons/ic-personal-data.svg" mode="aspectFit"></image>
+					<text class="menu-title">个人资料</text>
+					<image class="chevron-icon" src="/static/icons/ic-chevron.svg" mode="aspectFit"></image>
+				</button>
+				<view class="menu-divider"></view>
+
+				<button
+					class="tap-button menu-row"
+					hover-class="none"
+					:open-type="canTriggerPhoneLogin() ? 'getPhoneNumber' : ''"
+					@click="handleLoginTap"
+					@getphonenumber="onGetPhoneNumber"
+				>
+					<image class="menu-icon" src="/static/icons/ic-pain-data.svg" mode="aspectFit"></image>
+					<text class="menu-title">伤痛档案</text>
+					<text v-if="loggedIn" class="menu-extra">{{ painRecordCount }} 条记录</text>
+					<image class="chevron-icon" src="/static/icons/ic-chevron.svg" mode="aspectFit"></image>
+				</button>
+				<view class="menu-divider"></view>
+
+				<button
+					class="tap-button menu-row"
+					hover-class="none"
+					:open-type="canTriggerPhoneLogin() ? 'getPhoneNumber' : ''"
+					@click="handleLoginTap"
+					@getphonenumber="onGetPhoneNumber"
+				>
+					<image class="menu-icon" src="/static/icons/ic-mine-scheme.svg" mode="aspectFit"></image>
+					<text class="menu-title">我的方案</text>
+					<image class="chevron-icon" src="/static/icons/ic-chevron.svg" mode="aspectFit"></image>
+				</button>
+				<view class="menu-divider"></view>
+
+				<button
+					class="tap-button menu-row"
+					hover-class="none"
+					:open-type="canTriggerPhoneLogin() ? 'getPhoneNumber' : ''"
+					@click="handleLoginTap"
+					@getphonenumber="onGetPhoneNumber"
+				>
+					<image class="menu-icon" src="/static/icons/ic-mine-collect.svg" mode="aspectFit"></image>
+					<text class="menu-title">我的收藏</text>
+					<image class="chevron-icon" src="/static/icons/ic-chevron.svg" mode="aspectFit"></image>
+				</button>
+				<view class="menu-divider"></view>
+
+				<button
+					class="tap-button menu-row"
+					hover-class="none"
+					:open-type="canTriggerPhoneLogin() ? 'getPhoneNumber' : ''"
+					@click="handleLoginTap"
+					@getphonenumber="onGetPhoneNumber"
+				>
+					<image class="menu-icon" src="/static/icons/ic-contact.svg" mode="aspectFit"></image>
+					<text class="menu-title">联系客服</text>
+					<image class="chevron-icon" src="/static/icons/ic-chevron.svg" mode="aspectFit"></image>
+				</button>
+				<view class="menu-divider"></view>
+
+				<button
+					class="tap-button menu-row"
+					hover-class="none"
+					:open-type="canTriggerPhoneLogin() ? 'getPhoneNumber' : ''"
+					@click="handleLoginTap"
+					@getphonenumber="onGetPhoneNumber"
+				>
+					<image class="menu-icon" src="/static/icons/ic-settings.svg" mode="aspectFit"></image>
+					<text class="menu-title">设置</text>
+					<image class="chevron-icon" src="/static/icons/ic-chevron.svg" mode="aspectFit"></image>
+				</button>
+			</view>
 		</view>
 	</view>
 </template>
 
 <script setup lang="uts">
-	const statusBarHeight = ref(24)
+	import { calculateRehabDays, fetchCurrentUser, fetchCurrentUserInfo, hasLoginAgreement, hasLocalToken, loginByWechatPhone } from '../../common/auth'
+	import { resolveFileUrl } from '../../common/forum'
+	import { get } from '../../common/request'
+
+	const navSpaceHeight = ref(64)
+	const agreementAccepted = ref(false)
+	const loggedIn = ref(false)
+	const userName = ref('未登录')
+	const userHint = ref('点击登录，同步康复计划与伤痛档案')
+	const avatarUrl = ref('')
+	const rehabDays = ref(1)
+	const schemeCount = ref(0)
+	const collectCount = ref(0)
+	const likeCount = ref(0)
+	const painRecordCount = ref(0)
+	const integralText = ref('0')
+	const balanceText = ref('0.00')
 
 	onLoad(() => {
 		const sys = uni.getSystemInfoSync()
 		const status = sys.statusBarHeight
-		statusBarHeight.value = status
+		navSpaceHeight.value = status + 44
+
+		// #ifdef MP-WEIXIN
+		const menuButton = wx.getMenuButtonBoundingClientRect()
+		const menuGap = menuButton.top - status
+		if (menuGap > 0) {
+			navSpaceHeight.value = menuButton.bottom + menuGap
+		}
+		// #endif
 	})
+
+	onShow(() => {
+		refreshLoginState()
+	})
+
+	function refreshLoginState (): void {
+		agreementAccepted.value = hasLoginAgreement()
+		if (!hasLocalToken()) {
+			resetAuthenticatedState()
+			return
+		}
+
+		loggedIn.value = true
+		fetchCurrentUser((user) => {
+			updateUserView(user)
+			loadMineMetrics(user)
+		}, () => {
+			resetAuthenticatedState()
+		})
+	}
+
+	function updateUserView (user: UTSJSONObject): void {
+		const name = user.getString('name') ?? ''
+		const phone = user.getString('phone') ?? ''
+		const avatar = user.getString('avatar') ?? ''
+		const createdAt = user.getString('created_at') ?? ''
+
+		userName.value = name.length > 0 ? name : (phone.length > 0 ? phone : '微信用户')
+		userHint.value = phone.length > 0 ? phone : '已登录'
+		avatarUrl.value = avatar.length > 0 ? resolveFileUrl(avatar) : ''
+		rehabDays.value = calculateRehabDays(createdAt)
+	}
+
+	function loadMineMetrics (user: UTSJSONObject): void {
+		const userId = user.getString('id') ?? ''
+		fetchCurrentUserInfo((userInfo) => {
+			balanceText.value = userInfo.getString('balance') ?? '0.00'
+			integralText.value = userInfo.getNumber('integral', 0).toString()
+		}, () => {})
+
+		get('/patient_course', (res) => {
+			if (res.getNumber('code', 0) !== 200) {
+				return
+			}
+			const list = res.getArray<UTSJSONObject>('data')
+			schemeCount.value = list == null ? 0 : list.length
+		}, () => {})
+
+		get('/forum_like/count', (res) => {
+			if (res.getNumber('code', 0) !== 200) {
+				return
+			}
+			const data = res.getJSON('data')
+			likeCount.value = data == null ? 0 : data.getNumber('count', 0)
+		}, () => {})
+
+		get('/forum_favorite/count', (res) => {
+			if (res.getNumber('code', 0) !== 200) {
+				return
+			}
+			const data = res.getJSON('data')
+			collectCount.value = data == null ? 0 : data.getNumber('count', 0)
+		}, () => {})
+
+		if (userId.length === 0) {
+			return
+		}
+		get('/pain_question/custom?pageNo=1&pageSize=1&user_id=' + userId, (res) => {
+			if (res.getNumber('code', 0) !== 200) {
+				return
+			}
+			const data = res.getJSON('data')
+			painRecordCount.value = data == null ? 0 : data.getNumber('totalCount', 0)
+		}, () => {})
+	}
+
+	function resetAuthenticatedState (): void {
+		loggedIn.value = false
+		userName.value = '未登录'
+		userHint.value = '点击登录，同步康复计划与伤痛档案'
+		avatarUrl.value = ''
+		rehabDays.value = 1
+		schemeCount.value = 0
+		collectCount.value = 0
+		likeCount.value = 0
+		painRecordCount.value = 0
+		integralText.value = '0'
+		balanceText.value = '0.00'
+	}
+
+	function canTriggerPhoneLogin (): boolean {
+		return agreementAccepted.value && !loggedIn.value
+	}
+
+	function handleLoginTap (): void {
+		if (loggedIn.value) {
+			return
+		}
+		if (!agreementAccepted.value) {
+			uni.navigateTo({
+				url: '/pages/login-guide/login-guide'
+			})
+		}
+	}
+
+	function onGetPhoneNumber (event: UniEvent): void {
+		if (!canTriggerPhoneLogin()) {
+			return
+		}
+
+		const phoneCode = event.detail.code as string
+		if (phoneCode.length === 0) {
+			uni.showToast({
+				title: '未获取到手机号授权',
+				icon: 'none'
+			})
+			return
+		}
+
+		uni.showLoading({ title: '登录中' })
+		loginByWechatPhone(phoneCode, () => {
+			uni.hideLoading()
+			uni.showToast({
+				title: '登录成功',
+				icon: 'success'
+			})
+			refreshLoginState()
+		}, (message) => {
+			uni.hideLoading()
+			uni.showToast({
+				title: message,
+				icon: 'none'
+			})
+		})
+	}
 </script>
 
 <style lang="scss">
 	.page {
 		flex: 1;
+		min-height: 100vh;
 		background: #F7F8FA;
 	}
 
@@ -27,14 +351,336 @@
 		background: #F7F8FA;
 	}
 
-	.container {
-		flex: 1;
-		align-items: center;
-		justify-content: center;
+	.mine-content {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+		padding: 16px 16px 24px;
 	}
 
-	.title {
+	.tap-button {
+		width: 100%;
+		min-height: 0;
+		margin: 0;
+		padding: 0;
+		background: transparent;
+		border: none;
+		border-radius: 0;
+		line-height: normal;
+		text-align: left;
+		box-sizing: border-box;
+		overflow: visible;
+	}
+
+	.tap-button::after {
+		border: none;
+	}
+
+	.profile-card {
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
+		padding: 16px;
+		background: #FFFFFF;
+		border: 1px solid #EEF0F3;
+		border-radius: 16px;
+		box-shadow: 0 4px 16px rgba(23, 26, 36, 0.04);
+	}
+
+	.user-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 12px;
+	}
+
+	.avatar {
+		width: 56px;
+		height: 56px;
+		border-radius: 28px;
+		flex-shrink: 0;
+	}
+
+	.user-copy {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.user-name {
 		font-size: 18px;
-		color: #333;
+		font-weight: 700;
+		color: #1A1D24;
+		line-height: 25px;
+	}
+
+	.user-tags {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.user-tag {
+		padding: 3px 8px;
+		border-radius: 999px;
+	}
+
+	.user-tag-member {
+		background: #FFF3EC;
+	}
+
+	.user-tag-member-text {
+		font-size: 10px;
+		font-weight: 500;
+		color: #FF6B35;
+	}
+
+	.user-tag-streak {
+		background: #F3F4F6;
+	}
+
+	.user-tag-streak-text {
+		font-size: 10px;
+		font-weight: 500;
+		color: #6B7280;
+	}
+
+	.user-hint {
+		font-size: 12px;
+		font-weight: 400;
+		color: #9CA3AF;
+		line-height: 17px;
+	}
+
+	.chevron-icon {
+		width: 16px;
+		height: 16px;
+		flex-shrink: 0;
+	}
+
+	.divider {
+		width: 100%;
+		height: 1px;
+		background: #F3F4F6;
+	}
+
+	.stats-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.stat-item {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 2px;
+	}
+
+	.stat-value {
+		font-size: 20px;
+		font-weight: 700;
+		color: #1A1D24;
+		line-height: 27px;
+	}
+
+	.stat-label {
+		font-size: 11px;
+		font-weight: 400;
+		color: #9CA3AF;
+		line-height: 16px;
+	}
+
+	.login-card {
+		height: 92px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		padding: 16px;
+		box-sizing: border-box;
+		background-image: linear-gradient(135deg, #FF8A3D 0%, #FF5224 100%);
+		border-radius: 16px;
+		box-shadow: 0 6px 16px rgba(255, 107, 53, 0.25);
+	}
+
+	.login-copy {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.login-title-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.phone-icon {
+		width: 18px;
+		height: 18px;
+		flex-shrink: 0;
+	}
+
+	.login-title {
+		font-size: 20px;
+		font-weight: 700;
+		color: #FFFFFF;
+		line-height: 27px;
+	}
+
+	.login-subtitle {
+		font-size: 12px;
+		font-weight: 400;
+		color: rgba(255, 255, 255, 0.8);
+		line-height: 17px;
+	}
+
+	.account-card {
+		min-height: 132px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding: 16px;
+		box-sizing: border-box;
+		background-image: linear-gradient(135deg, #FF8A3D 0%, #FF5224 100%);
+		border-radius: 16px;
+		box-shadow: 0 6px 16px rgba(255, 107, 53, 0.25);
+	}
+
+	.account-section {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.balance-section {
+		flex: 1.35;
+		gap: 8px;
+	}
+
+	.credit-section {
+		flex: 1;
+	}
+
+	.account-head {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.account-icon {
+		width: 16px;
+		height: 16px;
+		flex-shrink: 0;
+	}
+
+	.account-label {
+		font-size: 13px;
+		color: rgba(255, 255, 255, 0.85);
+		line-height: 18px;
+	}
+
+	.account-value {
+		font-size: 24px;
+		font-weight: 700;
+		color: #FFFFFF;
+		line-height: 31px;
+	}
+
+	.account-divider {
+		width: 1px;
+		height: 72px;
+		background: rgba(255, 255, 255, 0.35);
+		flex-shrink: 0;
+	}
+
+	.recharge-button {
+		width: 68px;
+		height: 32px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: #FFFFFF;
+		border-radius: 999px;
+		flex-shrink: 0;
+	}
+
+	.recharge-button-text {
+		font-size: 13px;
+		font-weight: 600;
+		color: #FF6B35;
+	}
+
+	.login-button {
+		width: 96px;
+		height: 36px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: #FFFFFF;
+		border-radius: 999px;
+		flex-shrink: 0;
+	}
+
+	.login-button-text {
+		font-size: 13px;
+		font-weight: 600;
+		color: #FF6B35;
+	}
+
+	.menu-card {
+		display: flex;
+		flex-direction: column;
+		padding: 4px 0;
+		background: #FFFFFF;
+		border: 1px solid #EEF0F3;
+		border-radius: 16px;
+		box-shadow: 0 4px 16px rgba(23, 26, 36, 0.04);
+		overflow: hidden;
+	}
+
+	.menu-row {
+		height: 52px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 10px;
+		padding-left: 14px;
+		padding-right: 12px;
+	}
+
+	.menu-icon {
+		width: 30px;
+		height: 30px;
+		flex-shrink: 0;
+	}
+
+	.menu-title {
+		flex: 1;
+		font-size: 14px;
+		font-weight: 500;
+		color: #1A1D24;
+		line-height: 20px;
+	}
+
+	.menu-extra {
+		font-size: 11px;
+		font-weight: 400;
+		color: #9CA3AF;
+		line-height: 16px;
+	}
+	.menu-divider {
+		width: 100%;
+		height: 1px;
+		background: #F6F7F8;
 	}
 </style>
