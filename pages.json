@@ -39,6 +39,24 @@
 				"navigationStyle": "custom",
 				"backgroundColor": "#F7F8FA"
 			}
+		},
+		{
+			"path": "pages/recharge/recharge",
+			"style": {
+				"navigationBarTitleText": "余额充值管理",
+				"navigationBarTextStyle": "white",
+				"navigationStyle": "custom",
+				"backgroundColor": "#F7F8FA"
+			}
+		},
+		{
+			"path": "pages/recharge-success/recharge-success",
+			"style": {
+				"navigationBarTitleText": "支付成功",
+				"navigationBarTextStyle": "white",
+				"navigationStyle": "custom",
+				"backgroundColor": "#F7F8FA"
+			}
 		}
 	],
 	"globalStyle": {

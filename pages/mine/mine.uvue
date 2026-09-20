@@ -53,9 +53,9 @@
 						<text class="account-label">余额</text>
 					</view>
 					<text class="account-value">¥ {{ balanceText }}</text>
-					<view class="recharge-button">
+					<button class="recharge-button" hover-class="none" @click="goRecharge">
 						<text class="recharge-button-text">充值</text>
-					</view>
+					</button>
 				</view>
 
 				<view class="account-divider"></view>
@@ -174,6 +174,7 @@
 <script setup lang="uts">
 	import { calculateRehabDays, fetchCurrentUser, fetchCurrentUserInfo, hasLoginAgreement, hasLocalToken, loginByWechatPhone } from '../../common/auth'
 	import { resolveFileUrl } from '../../common/forum'
+	import { formatMoney } from '../../common/money'
 	import { get } from '../../common/request'
 
 	const navSpaceHeight = ref(64)
@@ -239,7 +240,7 @@
 	function loadMineMetrics (user: UTSJSONObject): void {
 		const userId = user.getString('id') ?? ''
 		fetchCurrentUserInfo((userInfo) => {
-			balanceText.value = userInfo.getString('balance') ?? '0.00'
+			balanceText.value = formatMoney(userInfo.getString('balance') ?? '0', 2)
 			integralText.value = userInfo.getNumber('integral', 0).toString()
 		}, () => {})
 
@@ -295,6 +296,12 @@
 
 	function canTriggerPhoneLogin (): boolean {
 		return agreementAccepted.value && !loggedIn.value
+	}
+
+	function goRecharge (): void {
+		uni.navigateTo({
+			url: '/pages/recharge/recharge'
+		})
 	}
 
 	function handleLoginTap (): void {
@@ -606,12 +613,20 @@
 	.recharge-button {
 		width: 68px;
 		height: 32px;
+		margin: 0;
+		padding: 0;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		background: #FFFFFF;
+		border: none;
 		border-radius: 999px;
+		line-height: normal;
 		flex-shrink: 0;
+	}
+
+	.recharge-button::after {
+		border: none;
 	}
 
 	.recharge-button-text {

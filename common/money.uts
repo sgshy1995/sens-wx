@@ -1,0 +1,34 @@
+export function formatMoney (value: string, fractionDigits: number): string {
+	const numberValue = Number(value)
+	if (numberValue != numberValue) {
+		return value
+	}
+
+	const fixed = numberValue.toFixed(fractionDigits)
+	let sign = ''
+	let unsigned = fixed
+	if (fixed.charAt(0) === '-') {
+		sign = '-'
+		unsigned = fixed.substring(1)
+	}
+
+	const dotIndex = unsigned.indexOf('.')
+	let integerPart = dotIndex >= 0 ? unsigned.substring(0, dotIndex) : unsigned
+	const decimalPart = dotIndex >= 0 ? unsigned.substring(dotIndex) : ''
+	integerPart = addThousandsSeparator(integerPart)
+
+	return sign + integerPart + decimalPart
+}
+
+function addThousandsSeparator (value: string): string {
+	let result = ''
+	let count = 0
+	for (let i = value.length - 1; i >= 0; i--) {
+		if (count > 0 && count % 3 === 0) {
+			result = ',' + result
+		}
+		result = value.charAt(i) + result
+		count++
+	}
+	return result
+}

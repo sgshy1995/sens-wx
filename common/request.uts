@@ -55,3 +55,27 @@ export function post (
 		}
 	})
 }
+
+export function put (
+	url: string,
+	data: UTSJSONObject,
+	success: (data: UTSJSONObject) => void,
+	fail: (message: string) => void
+): void {
+	uni.request<UTSJSONObject>({
+		url: API_BASE_URL + url,
+		method: 'PUT',
+		data: data,
+		header: buildHeader(),
+		success: (res) => {
+			if (res.data == null) {
+				fail('请求数据为空')
+			} else {
+				success(res.data)
+			}
+		},
+		fail: (err) => {
+			fail(err.errMsg)
+		}
+	})
+}

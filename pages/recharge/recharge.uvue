@@ -1,0 +1,701 @@
+<template>
+	<view class="page">
+		<view class="hero">
+			<view class="safe-nav" :style="{ paddingTop: statusBarHeight + 'px' }">
+				<view class="nav-row">
+					<view class="back-button" @click="goBack">
+						<text class="back-glyph">‹</text>
+					</view>
+					<text class="nav-title">余额充值管理</text>
+					<view class="nav-placeholder"></view>
+				</view>
+			</view>
+
+			<view class="balance-row">
+				<view class="balance-copy">
+					<text class="balance-label">当前余额（元）</text>
+					<text class="balance-value">¥ {{ balanceText }}</text>
+				</view>
+				<view class="detail-pill" @click="showBalanceDetailTip">
+					<text class="detail-pill-text">明细</text>
+				</view>
+			</view>
+
+			<view class="hero-tip-row">
+				<image class="tips-icon" src="/static/icons/ic-tips.svg" mode="aspectFit"></image>
+				<text class="hero-tip-text">账户余额只可在本软件中用于线上消费相关，不支持提现或变现；如有疑问，请联系客服。</text>
+			</view>
+		</view>
+
+		<scroll-view class="content-scroll" scroll-y>
+			<view class="content-inner">
+				<view class="section-head">
+					<text class="section-title">选择充值金额</text>
+					<text class="section-note">充值后实时到账</text>
+				</view>
+
+				<view class="amount-grid">
+					<view
+						v-for="amount in amountOptions"
+						:key="amount"
+						class="amount-option"
+						:class="{ 'amount-option-active': !customSelected && selectedAmount === amount }"
+						@click="selectAmount(amount)"
+					>
+						<view class="amount-option-ring" :class="{ 'amount-option-ring-active': !customSelected && selectedAmount === amount }"></view>
+						<text
+							class="amount-option-text"
+							:class="{ 'amount-option-text-active': !customSelected && selectedAmount === amount }"
+						>¥{{ formatOptionAmount(amount) }}</text>
+					</view>
+					<view
+						class="amount-option"
+						:class="{ 'amount-option-active': customSelected }"
+						@click="selectCustomAmount"
+					>
+						<view class="amount-option-ring" :class="{ 'amount-option-ring-active': customSelected }"></view>
+						<text
+							class="amount-option-text"
+							:class="{ 'amount-option-text-active': customSelected }"
+						>自定义</text>
+					</view>
+				</view>
+
+				<view v-if="customSelected" class="custom-input-wrap">
+					<view class="custom-input-border"></view>
+					<text class="custom-currency">¥</text>
+					<input
+						class="custom-input"
+						type="number"
+						maxlength="6"
+						style="border: 0; outline: 0; box-shadow: none; appearance: none; -webkit-appearance: none;"
+						:value="formatCustomInput()"
+						@input="onCustomAmountInput"
+					/>
+				</view>
+
+				<text class="payment-title">支付方式</text>
+
+				<view class="payment-card">
+					<image class="wx-icon" src="/static/icons/ic-wx.svg" mode="aspectFit"></image>
+					<text class="payment-name">微信支付</text>
+					<view class="payment-check">
+						<text class="payment-check-mark">✓</text>
+					</view>
+				</view>
+
+				<view class="agreement-row" @click="toggleAgreement">
+					<view class="agreement-check" :class="{ 'agreement-check-active': agreementAccepted }">
+						<text v-if="agreementAccepted" class="agreement-check-mark">✓</text>
+					</view>
+					<text class="agreement-text">已阅读并同意</text>
+					<text class="agreement-link">《用户服务协议》</text>
+					<text class="agreement-text">与</text>
+					<text class="agreement-link">《充值服务协议》</text>
+				</view>
+			</view>
+		</scroll-view>
+
+		<view class="footer">
+			<button
+				class="pay-button"
+				:class="{ 'pay-button-disabled': !canSubmitPayment() }"
+				:disabled="!canSubmitPayment()"
+				hover-class="none"
+				@click="handlePay"
+			>
+				<text
+					class="pay-button-text"
+					:class="{ 'pay-button-text-disabled': !canSubmitPayment() }"
+				>{{ payButtonText() }}</text>
+			</button>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { fetchCurrentUserInfo } from '../../common/auth'
+	import { formatMoney } from '../../common/money'
+	import { put } from '../../common/request'
+
+	const statusBarHeight = ref(24)
+	const balanceText = ref('0.00')
+	const amountOptions = ref<number[]>([100, 300, 500, 1000, 3000, 5000, 10000])
+	const selectedAmount = ref(300)
+	const customSelected = ref(false)
+	const customAmount = ref('0')
+	const agreementAccepted = ref(true)
+	const paying = ref(false)
+
+	onLoad(() => {
+		const sys = uni.getSystemInfoSync()
+		statusBarHeight.value = sys.statusBarHeight
+	})
+
+	onShow(() => {
+		loadBalance()
+	})
+
+	function loadBalance (): void {
+		fetchCurrentUserInfo((userInfo) => {
+			balanceText.value = formatMoney(userInfo.getString('balance') ?? '0', 2)
+		}, () => {})
+	}
+
+	function selectAmount (amount: number): void {
+		selectedAmount.value = amount
+		customSelected.value = false
+	}
+
+	function selectCustomAmount (): void {
+		customSelected.value = true
+	}
+
+	function onCustomAmountInput (event: UniEvent): void {
+		const raw = event.detail.value as string
+		customAmount.value = normalizeCustomAmount(raw)
+	}
+
+	function normalizeCustomAmount (value: string): string {
+		let source = value
+		const dotIndex = source.indexOf('.')
+		if (dotIndex >= 0) {
+			source = source.substring(0, dotIndex)
+		}
+		let digits = ''
+		for (let i = 0; i < source.length; i++) {
+			const char = source.charAt(i)
+			if (char >= '0' && char <= '9') {
+				digits += char
+			}
+		}
+		if (digits.length === 0) {
+			return ''
+		}
+		const amount = Number(digits)
+		if (amount > 99999) {
+			return '99999'
+		}
+		if (amount <= 0) {
+			return '0'
+		}
+		return amount.toString()
+	}
+
+	function customAmountValid (): boolean {
+		if (!customSelected.value || customAmount.value.length === 0) {
+			return false
+		}
+		const amount = Number(customAmount.value)
+		return amount > 0 && amount <= 99999 && amount === Math.floor(amount)
+	}
+
+	function canSubmitPayment (): boolean {
+		return customSelected.value ? customAmountValid() : selectedAmount.value > 0
+	}
+
+	function currentPayAmount (): number {
+		return customSelected.value ? Number(customAmount.value) : selectedAmount.value
+	}
+
+	function formatOptionAmount (amount: number): string {
+		return formatMoney(amount.toString(), 0)
+	}
+
+	function formatCustomInput (): string {
+		if (customAmount.value.length === 0) {
+			return ''
+		}
+		return formatMoney(customAmount.value, 0)
+	}
+
+	function payButtonText (): string {
+		if (!canSubmitPayment()) {
+			return '确认支付'
+		}
+		return '确认支付 ¥' + formatMoney(currentPayAmount().toString(), 0)
+	}
+
+	function toggleAgreement (): void {
+		if (!paying.value) {
+			agreementAccepted.value = !agreementAccepted.value
+		}
+	}
+
+	function showBalanceDetailTip (): void {
+		uni.showToast({
+			title: '余额明细暂未开放',
+			icon: 'none'
+		})
+	}
+
+	function goBack (): void {
+		if (paying.value) {
+			return
+		}
+		uni.navigateBack()
+	}
+
+	function handlePay (): void {
+		if (paying.value || !canSubmitPayment()) {
+			return
+		}
+		if (!agreementAccepted.value) {
+			uni.showToast({
+				title: '请先阅读并同意充值协议',
+				icon: 'none'
+			})
+			return
+		}
+
+		paying.value = true
+		// 微信支付接入位：当前直接按支付成功处理并入账。
+		uni.showLoading({
+			title: '支付中',
+			mask: true
+		})
+
+		const amount = currentPayAmount()
+		const requestData = new UTSJSONObject()
+		requestData.set('balance', amount.toString())
+		requestData.set('payment_type', 1)
+
+		put('/user_info/balance/add', requestData, (res) => {
+			const code = res.getNumber('code', 0)
+			if (code !== 200) {
+				finishPayment()
+				uni.showToast({
+					title: res.getString('message') ?? '支付失败',
+					icon: 'none'
+				})
+				return
+			}
+
+			const order = res.getJSON('data')
+			const paymentTime = order == null ? '' : (order.getString('payment_time') ?? '')
+			const orderNo = order == null ? '' : (order.getString('order_no') ?? '')
+
+			finishPayment()
+			uni.redirectTo({
+				url: '/pages/recharge-success/recharge-success?amount=' + amount.toString()
+					+ '&time=' + encodeURIComponent(paymentTime)
+					+ '&orderNo=' + encodeURIComponent(orderNo)
+			})
+		}, (message) => {
+			finishPayment()
+			uni.showToast({
+				title: message,
+				icon: 'none'
+			})
+		})
+	}
+
+	function finishPayment (): void {
+		paying.value = false
+		uni.hideLoading()
+	}
+</script>
+
+<style lang="scss">
+	.page {
+		display: flex;
+		flex-direction: column;
+		height: 100vh;
+		background: #F7F8FA;
+	}
+
+	.hero {
+		background-image: linear-gradient(142deg, #FF8A43 0%, #FA4D1A 100%);
+	}
+
+	.safe-nav {
+		width: 100%;
+	}
+
+	.nav-row {
+		height: 44px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 16px;
+		padding-right: 16px;
+	}
+
+	.back-button {
+		width: 32px;
+		height: 32px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 16px;
+		background: rgba(255, 255, 255, 0.22);
+		flex-shrink: 0;
+	}
+
+	.back-glyph {
+		margin-top: -3px;
+		font-size: 28px;
+		line-height: 28px;
+		color: #FFFFFF;
+	}
+
+	.nav-title {
+		flex: 1;
+		text-align: center;
+		font-size: 17px;
+		font-weight: 600;
+		color: #FFFFFF;
+	}
+
+	.nav-placeholder {
+		width: 32px;
+		height: 32px;
+		flex-shrink: 0;
+	}
+
+	.balance-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding: 8px 16px 0;
+	}
+
+	.balance-copy {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.balance-label {
+		font-size: 12px;
+		line-height: 17px;
+		color: rgba(255, 255, 255, 0.82);
+	}
+
+	.balance-value {
+		font-size: 30px;
+		font-weight: 700;
+		line-height: 38px;
+		color: #FFFFFF;
+	}
+
+	.detail-pill {
+		width: 62px;
+		height: 32px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: rgba(255, 255, 255, 0.96);
+		border-radius: 16px;
+	}
+
+	.detail-pill-text {
+		font-size: 13px;
+		font-weight: 500;
+		color: #FA4D1A;
+	}
+
+	.hero-tip-row {
+		display: flex;
+		flex-direction: row;
+		align-items: flex-start;
+		gap: 6px;
+		padding: 12px 16px 16px;
+	}
+
+	.tips-icon {
+		width: 14px;
+		height: 14px;
+		margin-top: 2px;
+		flex-shrink: 0;
+	}
+
+	.hero-tip-text {
+		flex: 1;
+		font-size: 11px;
+		line-height: 17px;
+		color: rgba(255, 255, 255, 0.82);
+	}
+
+	.content-scroll {
+		flex: 1;
+		height: 0;
+	}
+
+	.content-inner {
+		padding: 18px 16px 24px;
+	}
+
+	.section-head {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.section-title {
+		font-size: 16px;
+		font-weight: 700;
+		line-height: 22px;
+		color: #1A1D24;
+	}
+
+	.section-note {
+		font-size: 11px;
+		line-height: 16px;
+		color: #9CA3AF;
+	}
+
+	.amount-grid {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-top: 12px;
+	}
+
+	.amount-option {
+		position: relative;
+		width: calc((100% - 24px) / 4);
+		height: 48px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		box-sizing: border-box;
+		background: #FFFFFF;
+		border: none !important;
+		border-radius: 9px;
+		outline: none !important;
+		box-shadow: none !important;
+		-webkit-appearance: none;
+		appearance: none;
+		-webkit-tap-highlight-color: transparent;
+	}
+
+	.amount-option-active {
+		background: #FFF8F4;
+		border: none !important;
+		box-shadow: none !important;
+	}
+
+	.amount-option-ring {
+		position: absolute;
+		left: 0;
+		top: 0;
+		width: 100%;
+		height: 100%;
+		box-sizing: border-box;
+		border: 1px solid #EEF0F3;
+		border-radius: 9px;
+		pointer-events: none;
+	}
+
+	.amount-option-ring-active {
+		border: 1px solid #FF6B35;
+	}
+
+	.amount-option-text {
+		font-size: 14px;
+		font-weight: 500;
+		color: #1A1D24;
+	}
+
+	.amount-option-text-active {
+		color: #FF6B35;
+	}
+
+	.custom-input-wrap {
+		position: relative;
+		height: 48px;
+		margin-top: 10px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 14px;
+		padding-right: 14px;
+		box-sizing: border-box;
+		background: #FFFFFF;
+		border: none !important;
+		border-radius: 9px;
+		outline: none !important;
+		box-shadow: none !important;
+		-webkit-appearance: none;
+		appearance: none;
+	}
+
+	.custom-input-border {
+		position: absolute;
+		left: 0;
+		top: 0;
+		width: 100%;
+		height: 100%;
+		box-sizing: border-box;
+		border: 1px solid #FF6B35;
+		border-radius: 9px;
+		pointer-events: none;
+	}
+
+	.custom-currency {
+		margin-right: 6px;
+		font-size: 16px;
+		font-weight: 600;
+		color: #FF6B35;
+	}
+
+	.custom-input {
+		flex: 1;
+		height: 48px;
+		padding: 0;
+		font-size: 16px;
+		font-weight: 600;
+		color: #1A1D24;
+		background: transparent;
+		border: none !important;
+		outline: none !important;
+		box-shadow: none !important;
+		-webkit-appearance: none;
+		appearance: none;
+		box-sizing: border-box;
+	}
+
+	.custom-input:focus {
+		border: none !important;
+		outline: none !important;
+		box-shadow: none !important;
+	}
+
+	.payment-title {
+		display: block;
+		margin-top: 22px;
+		font-size: 16px;
+		font-weight: 700;
+		line-height: 22px;
+		color: #1A1D24;
+	}
+
+	.payment-card {
+		height: 64px;
+		margin-top: 12px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 14px;
+		padding-right: 14px;
+		box-sizing: border-box;
+		background: #FFFFFF;
+		border-radius: 12px;
+	}
+
+	.wx-icon {
+		width: 36px;
+		height: 36px;
+		flex-shrink: 0;
+	}
+
+	.payment-name {
+		flex: 1;
+		margin-left: 10px;
+		font-size: 15px;
+		font-weight: 500;
+		color: #1A1D24;
+	}
+
+	.payment-check {
+		width: 20px;
+		height: 20px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 10px;
+		background: #FF6B35;
+	}
+
+	.payment-check-mark {
+		font-size: 13px;
+		line-height: 13px;
+		color: #FFFFFF;
+	}
+
+	.agreement-row {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		align-items: center;
+		margin-top: 14px;
+	}
+
+	.agreement-check {
+		width: 16px;
+		height: 16px;
+		margin-right: 6px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		box-sizing: border-box;
+		border: 1px solid #C2C7CF;
+		border-radius: 8px;
+	}
+
+	.agreement-check-active {
+		background: #FF6B35;
+		border-color: #FF6B35;
+	}
+
+	.agreement-check-mark {
+		font-size: 11px;
+		line-height: 11px;
+		color: #FFFFFF;
+	}
+
+	.agreement-text {
+		font-size: 11px;
+		line-height: 18px;
+		color: #9CA3AF;
+	}
+
+	.agreement-link {
+		font-size: 11px;
+		line-height: 18px;
+		color: #FF6B35;
+	}
+
+	.footer {
+		padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+		background: #FFFFFF;
+		box-shadow: 0 -4px 16px rgba(23, 26, 36, 0.06);
+	}
+
+	.pay-button {
+		width: 100%;
+		height: 48px;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background-image: linear-gradient(90deg, #FF8A43 0%, #FA4D1A 100%);
+		border: none;
+		border-radius: 24px;
+		line-height: normal;
+	}
+
+	.pay-button::after {
+		border: none;
+	}
+
+	.pay-button-disabled {
+		background: #E5E7EB;
+		background-image: none;
+	}
+
+	.pay-button-text {
+		font-size: 15px;
+		font-weight: 600;
+		color: #FFFFFF;
+	}
+
+	.pay-button-text-disabled {
+		color: #9CA3AF;
+	}
+</style>
