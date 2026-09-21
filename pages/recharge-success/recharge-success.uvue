@@ -121,8 +121,8 @@
 	}
 
 	function viewBalanceDetail (): void {
-		uni.switchTab({
-			url: '/pages/mine/mine'
+		uni.navigateTo({
+			url: '/pages/balance-detail/balance-detail'
 		})
 	}
 </script>

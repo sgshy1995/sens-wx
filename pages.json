@@ -57,6 +57,15 @@
 				"navigationStyle": "custom",
 				"backgroundColor": "#F7F8FA"
 			}
+		},
+		{
+			"path": "pages/balance-detail/balance-detail",
+			"style": {
+				"navigationBarTitleText": "余额明细",
+				"navigationBarTextStyle": "white",
+				"navigationStyle": "custom",
+				"backgroundColor": "#F7F8FA"
+			}
 		}
 	],
 	"globalStyle": {

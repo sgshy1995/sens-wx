@@ -223,9 +223,8 @@
 	}
 
 	function showBalanceDetailTip (): void {
-		uni.showToast({
-			title: '余额明细暂未开放',
-			icon: 'none'
+		uni.navigateTo({
+			url: '/pages/balance-detail/balance-detail'
 		})
 	}
 

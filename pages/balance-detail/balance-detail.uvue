@@ -1,0 +1,562 @@
+<template>
+	<view class="page">
+		<view class="hero">
+			<view class="safe-nav" :style="{ paddingTop: statusBarHeight + 'px' }">
+				<view class="nav-row">
+					<view class="back-button" @click="goBack">
+						<text class="back-glyph">‹</text>
+					</view>
+					<text class="nav-title">余额明细</text>
+					<view class="nav-placeholder"></view>
+				</view>
+			</view>
+
+			<view class="balance-row">
+				<text class="balance-label">当前余额（元）</text>
+				<text class="balance-value">¥ {{ balanceText }}</text>
+			</view>
+
+			<view class="summary-row">
+				<view class="summary-pill">
+					<text class="summary-text">本月充值 +¥{{ monthIncomeText }}</text>
+				</view>
+				<view class="summary-pill">
+					<text class="summary-text">本月消费 -¥{{ monthExpenseText }}</text>
+				</view>
+			</view>
+		</view>
+
+		<scroll-view class="content-scroll" scroll-y>
+			<view class="content-inner">
+				<view class="filter-card">
+					<view class="type-switch">
+						<view class="type-tab" :class="{ 'type-tab-active': selectedType === 'all' }" @click="selectType('all')">
+							<text class="type-text" :class="{ 'type-text-active': selectedType === 'all' }">全部</text>
+						</view>
+						<view class="type-tab" :class="{ 'type-tab-active': selectedType === 'income' }" @click="selectType('income')">
+							<text class="type-text" :class="{ 'type-text-active': selectedType === 'income' }">充值</text>
+						</view>
+						<view class="type-tab" :class="{ 'type-tab-active': selectedType === 'expense' }" @click="selectType('expense')">
+							<text class="type-text" :class="{ 'type-text-active': selectedType === 'expense' }">消费</text>
+						</view>
+					</view>
+
+					<view class="date-row">
+						<view class="date-pill" :class="{ 'date-pill-active': selectedRange === 'today' }" @click="selectRange('today')">
+							<text class="date-text" :class="{ 'date-text-active': selectedRange === 'today' }">今天</text>
+						</view>
+						<view class="date-pill" :class="{ 'date-pill-active': selectedRange === 'week' }" @click="selectRange('week')">
+							<text class="date-text" :class="{ 'date-text-active': selectedRange === 'week' }">本周</text>
+						</view>
+						<view class="date-pill" :class="{ 'date-pill-active': selectedRange === 'month' }" @click="selectRange('month')">
+							<text class="date-text" :class="{ 'date-text-active': selectedRange === 'month' }">本月</text>
+						</view>
+						<picker class="date-picker" mode="date" :value="customDate" :start="startDate" :end="todayDate" @change="onCustomDateChange">
+							<view class="date-pill date-pill-custom" :class="{ 'date-pill-active': selectedRange === 'custom' }">
+								<view class="calendar-icon">
+									<view class="calendar-body"></view>
+									<view class="calendar-line"></view>
+								</view>
+								<text class="date-text" :class="{ 'date-text-active': selectedRange === 'custom' }">{{ customDateLabel() }}</text>
+							</view>
+						</picker>
+					</view>
+				</view>
+
+				<view v-if="loading" class="empty-card">
+					<text class="empty-text">加载中...</text>
+				</view>
+				<view v-else-if="groups.length === 0" class="empty-card">
+					<text class="empty-text">暂无收支记录</text>
+				</view>
+
+				<view v-for="group in groups" :key="group.key" class="list-card">
+					<view class="group-head">
+						<text class="group-title">{{ group.title }}</text>
+						<text class="group-summary">{{ group.summaryText }}</text>
+					</view>
+					<view v-for="(order, index) in group.orders" :key="order.id" class="order-row">
+						<view class="order-icon" :class="order.isIncome ? 'order-icon-income' : 'order-icon-expense'">
+							<text class="order-icon-text" :class="order.isIncome ? 'order-icon-text-income' : 'order-icon-text-expense'">{{ order.isIncome ? '+' : '-' }}</text>
+						</view>
+						<view class="order-info">
+							<text class="order-title">{{ order.title }}</text>
+							<text class="order-subtitle">{{ order.subtitle }}</text>
+						</view>
+						<text class="order-amount" :class="{ 'order-amount-income': order.isIncome }">{{ order.amountText }}</text>
+						<view v-if="index < group.orders.length - 1" class="order-divider"></view>
+					</view>
+				</view>
+
+				<text class="list-note">仅展示近30天的收支记录</text>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import dayjs from 'dayjs'
+	import { BalanceGroup, BalanceOrder, buildBalanceGroups } from '../../common/balance'
+	import { fetchCurrentUserInfo } from '../../common/auth'
+	import { formatMoney } from '../../common/money'
+	import { get } from '../../common/request'
+
+	const statusBarHeight = ref(24)
+	const balanceText = ref('0.00')
+	const monthIncomeText = ref('0.00')
+	const monthExpenseText = ref('0.00')
+	const selectedType = ref('all')
+	const selectedRange = ref('month')
+	const customDate = ref(dayjs().format('YYYY-MM-DD'))
+	const todayDate = ref(dayjs().format('YYYY-MM-DD'))
+	const startDate = ref(dayjs().subtract(29, 'day').format('YYYY-MM-DD'))
+	const orders = ref<BalanceOrder[]>([])
+	const groups = ref<BalanceGroup[]>([])
+	const loading = ref(true)
+
+	onLoad(() => {
+		const sys = uni.getSystemInfoSync()
+		statusBarHeight.value = sys.statusBarHeight
+	})
+
+	onShow(() => {
+		loadBalance()
+		loadOrders()
+	})
+
+	function loadBalance (): void {
+		fetchCurrentUserInfo((userInfo) => {
+			balanceText.value = formatMoney(userInfo.getString('balance') ?? '0', 2)
+		}, () => {})
+	}
+
+	function loadOrders (): void {
+		loading.value = true
+		get('/top_up_order?order_type=payment_time&order=desc', (res) => {
+			const code = res.getNumber('code', 0)
+			if (code !== 200) {
+				loading.value = false
+				return
+			}
+			const items = res.getArray<UTSJSONObject>('data')
+			const parsed: BalanceOrder[] = []
+			const minTime = dayjs().subtract(29, 'day').startOf('day').valueOf()
+			if (items != null) {
+				for (let i = 0; i < items.length; i++) {
+					const item = new BalanceOrder()
+					item.initFromJSON(items[i])
+					if (item.dateKey.length === 0 || dayjs(item.dateKey).valueOf() >= minTime) {
+						parsed.push(item)
+					}
+				}
+			}
+			orders.value = parsed
+			updateMonthlySummary()
+			rebuildGroups()
+			loading.value = false
+		}, () => {
+			loading.value = false
+		})
+	}
+
+	function updateMonthlySummary (): void {
+		let income = 0
+		let expense = 0
+		const now = dayjs()
+		for (let i = 0; i < orders.value.length; i++) {
+			const order = orders.value[i]
+			if (!dayjs(order.dateKey).isSame(now, 'month')) {
+				continue
+			}
+			if (order.amount >= 0) {
+				income += order.amount
+			} else {
+				expense += Math.abs(order.amount)
+			}
+		}
+		monthIncomeText.value = formatMoney(income.toString(), 2)
+		monthExpenseText.value = formatMoney(expense.toString(), 2)
+	}
+
+	function rebuildGroups (): void {
+		groups.value = buildBalanceGroups(orders.value, selectedType.value, selectedRange.value, customDate.value)
+	}
+
+	function selectType (type: string): void {
+		selectedType.value = type
+		rebuildGroups()
+	}
+
+	function selectRange (range: string): void {
+		selectedRange.value = range
+		rebuildGroups()
+	}
+
+	function onCustomDateChange (event: UniEvent): void {
+		customDate.value = event.detail.value as string
+		selectedRange.value = 'custom'
+		rebuildGroups()
+	}
+
+	function customDateLabel (): string {
+		return dayjs(customDate.value).format('M月D日')
+	}
+
+	function goBack (): void {
+		uni.navigateBack()
+	}
+</script>
+
+<style lang="scss">
+	.page {
+		display: flex;
+		flex-direction: column;
+		height: 100vh;
+		background: #F7F8FA;
+	}
+
+	.hero {
+		background-image: linear-gradient(135deg, #FF8A3D 0%, #FF5226 100%);
+	}
+
+	.safe-nav {
+		width: 100%;
+	}
+
+	.nav-row {
+		height: 32px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 20px;
+		padding-right: 20px;
+		box-sizing: border-box;
+	}
+
+	.back-button {
+		width: 32px;
+		height: 32px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 16px;
+		background: rgba(255, 255, 255, 0.18);
+		flex-shrink: 0;
+	}
+
+	.back-glyph {
+		margin-top: -3px;
+		font-size: 28px;
+		line-height: 28px;
+		color: #FFFFFF;
+	}
+
+	.nav-title {
+		flex: 1;
+		text-align: center;
+		font-size: 16px;
+		font-weight: 600;
+		color: #FFFFFF;
+	}
+
+	.nav-placeholder {
+		width: 32px;
+		height: 32px;
+		flex-shrink: 0;
+	}
+
+	.balance-row {
+		display: flex;
+		flex-direction: column;
+		gap: 5px;
+		padding: 14px 20px 0;
+	}
+
+	.balance-label {
+		font-size: 12px;
+		color: rgba(255, 255, 255, 0.8);
+	}
+
+	.balance-value {
+		font-size: 30px;
+		font-weight: 700;
+		color: #FFFFFF;
+	}
+
+	.summary-row {
+		display: flex;
+		flex-direction: row;
+		gap: 8px;
+		padding: 14px 20px 22px;
+	}
+
+	.summary-pill {
+		padding: 5px 10px;
+		background: rgba(255, 255, 255, 0.18);
+		border-radius: 999px;
+	}
+
+	.summary-text {
+		font-size: 11px;
+		font-weight: 500;
+		color: #FFFFFF;
+	}
+
+	.content-scroll {
+		flex: 1;
+		height: 0;
+	}
+
+	.content-inner {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		padding: 16px 16px 48px;
+	}
+
+	.filter-card {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		padding: 12px;
+		box-sizing: border-box;
+		background: #FFFFFF;
+		border: 1px solid #EEF0F3;
+		border-radius: 16px;
+		box-shadow: 0 4px 16px rgba(23, 26, 36, 0.04);
+	}
+
+	.type-switch {
+		height: 36px;
+		display: flex;
+		flex-direction: row;
+		padding: 3px;
+		box-sizing: border-box;
+		background: #F0F2F5;
+		border-radius: 999px;
+	}
+
+	.type-tab {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 999px;
+	}
+
+	.type-tab-active {
+		background: #FFFFFF;
+		box-shadow: 0 1px 3px rgba(23, 26, 36, 0.06);
+	}
+
+	.type-text {
+		font-size: 13px;
+		color: #9CA3AF;
+	}
+
+	.type-text-active {
+		font-weight: 500;
+		color: #1A1D24;
+	}
+
+	.date-row {
+		display: flex;
+		flex-direction: row;
+		gap: 8px;
+	}
+
+	.date-picker {
+		display: flex;
+		flex-direction: row;
+	}
+
+	.date-pill {
+		height: 30px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+		padding-left: 12px;
+		padding-right: 12px;
+		box-sizing: border-box;
+		background: #F0F2F5;
+		border: 1px solid transparent;
+		border-radius: 999px;
+	}
+
+	.date-pill-active {
+		background: #FFF3EC;
+		border-color: #FF6B35;
+	}
+
+	.date-pill-custom {
+		gap: 4px;
+	}
+
+	.date-text {
+		font-size: 12px;
+		font-weight: 500;
+		color: #9CA3AF;
+	}
+
+	.date-text-active {
+		font-weight: 600;
+		color: #FF6B35;
+	}
+
+	.calendar-icon {
+		position: relative;
+		width: 12px;
+		height: 12px;
+	}
+
+	.calendar-body {
+		position: absolute;
+		left: 1.5px;
+		top: 2.5px;
+		width: 9px;
+		height: 8px;
+		box-sizing: border-box;
+		border: 1px solid #9CA3AF;
+		border-radius: 1px;
+	}
+
+	.calendar-line {
+		position: absolute;
+		left: 1.5px;
+		top: 5px;
+		width: 9px;
+		height: 1px;
+		background: #9CA3AF;
+	}
+
+	.list-card,
+	.empty-card {
+		display: flex;
+		flex-direction: column;
+		padding: 2px 0;
+		box-sizing: border-box;
+		background: #FFFFFF;
+		border: 1px solid #EEF0F3;
+		border-radius: 16px;
+		box-shadow: 0 4px 16px rgba(23, 26, 36, 0.04);
+	}
+
+	.group-head {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		padding: 10px 12px;
+	}
+
+	.group-title {
+		font-size: 13px;
+		font-weight: 600;
+		color: #1A1D24;
+	}
+
+	.group-summary {
+		font-size: 11px;
+		color: #9CA3AF;
+	}
+
+	.order-row {
+		position: relative;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 10px;
+		padding: 10px 12px;
+		box-sizing: border-box;
+	}
+
+	.order-icon {
+		width: 36px;
+		height: 36px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 10px;
+		flex-shrink: 0;
+	}
+
+	.order-icon-income {
+		background: #FFF3EC;
+	}
+
+	.order-icon-expense {
+		background: #EEF0F3;
+	}
+
+	.order-icon-text {
+		font-size: 20px;
+		font-weight: 600;
+		line-height: 20px;
+	}
+
+	.order-icon-text-income {
+		color: #FF6B35;
+	}
+
+	.order-icon-text-expense {
+		color: #1A1D24;
+	}
+
+	.order-info {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+		min-width: 0;
+	}
+
+	.order-title {
+		font-size: 14px;
+		font-weight: 500;
+		color: #1A1D24;
+	}
+
+	.order-subtitle {
+		font-size: 11px;
+		color: #9CA3AF;
+	}
+
+	.order-amount {
+		font-size: 15px;
+		font-weight: 600;
+		color: #1A1D24;
+		flex-shrink: 0;
+	}
+
+	.order-amount-income {
+		color: #FF6B35;
+	}
+
+	.order-divider {
+		position: absolute;
+		left: 12px;
+		right: 12px;
+		bottom: 0;
+		height: 1px;
+		background: #F1F3F5;
+	}
+
+	.empty-card {
+		height: 180px;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.empty-text {
+		font-size: 13px;
+		color: #9CA3AF;
+	}
+
+	.list-note {
+		display: block;
+		text-align: center;
+		font-size: 11px;
+		color: #9CA3AF;
+	}
+</style>
