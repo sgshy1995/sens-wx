@@ -1,0 +1,200 @@
+<template>
+	<view class="page">
+		<view class="hero">
+			<view class="safe-nav" :style="{ paddingTop: statusBarHeight + 'px' }">
+				<view class="nav-row">
+					<view class="back-button" @click="goBack"><text class="back-glyph">‹</text></view>
+					<text class="nav-title">消费详情</text>
+					<view class="nav-placeholder"></view>
+				</view>
+			</view>
+			<view class="amount-area">
+				<text class="amount-label">消费金额</text>
+				<text class="amount-value">{{ amountText }}</text>
+				<view class="status-pill"><text class="status-text">交易成功</text></view>
+			</view>
+		</view>
+
+		<scroll-view class="content-scroll" scroll-y>
+			<view class="content-inner">
+				<text class="section-title">交易信息</text>
+				<view class="info-card">
+					<view class="info-row">
+						<text class="info-label">消费类型</text>
+						<text class="info-value">{{ consumeType }}</text>
+					</view>
+					<view class="divider"></view>
+					<view class="info-row">
+						<text class="info-label">商品名称</text>
+						<text class="info-value info-product">{{ productName }}</text>
+					</view>
+					<view class="divider"></view>
+					<view class="info-row">
+						<text class="info-label">支付方式</text>
+						<text class="info-value">{{ paymentType }}</text>
+					</view>
+					<view class="divider"></view>
+					<view class="info-row">
+						<text class="info-label">交易单号</text>
+						<view class="value-group">
+							<text class="info-value info-number">{{ tradeNo }}</text>
+							<text class="copy-text" @click="copyText(tradeNo)">复制</text>
+						</view>
+					</view>
+					<view class="divider"></view>
+					<view class="info-row">
+						<text class="info-label">交易时间</text>
+						<text class="info-value">{{ orderTime }}</text>
+					</view>
+					<view class="divider"></view>
+					<view class="info-row">
+						<text class="info-label">交易状态</text>
+						<text class="info-value info-success">交易成功</text>
+					</view>
+				</view>
+
+				<view class="help-card" @click="viewRelatedOrder">
+					<view class="help-icon-wrap">
+						<image class="help-icon" src="/static/icons/ic-order.svg" mode="aspectFit"></image>
+					</view>
+					<text class="help-text">查看关联订单</text>
+					<text class="help-arrow">›</text>
+				</view>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import {
+		courseProductName,
+		equipmentProductName,
+		findOrderByKey,
+		formatOrderAmount,
+		formatOrderTime,
+		paymentTypeText
+	} from '../../common/order-detail'
+	import { get } from '../../common/request'
+
+	const statusBarHeight = ref(24)
+	const amountText = ref('-¥0.00')
+	const consumeType = ref('消费')
+	const productName = ref('康复服务')
+	const paymentType = ref('余额支付')
+	const tradeNo = ref('')
+	const orderTime = ref('')
+	const orderId = ref('')
+	const sourceOrderNo = ref('')
+
+	onLoad((options) => {
+		const sys = uni.getSystemInfoSync()
+		statusBarHeight.value = sys.statusBarHeight
+		const id = options['id']
+		if (id != null) {
+			orderId.value = id as string
+		}
+		const no = options['orderNo']
+		if (no != null) {
+			sourceOrderNo.value = no as string
+			tradeNo.value = no as string
+		}
+		loadOrder()
+	})
+
+	function loadOrder (): void {
+		get('/top_up_order?order_type=payment_time&order=desc', (res) => {
+			if (res.getNumber('code', 0) !== 200) {
+				return
+			}
+			const items = res.getArray<UTSJSONObject>('data')
+			if (items == null) {
+				return
+			}
+			const order = findOrderByKey(items, orderId.value, sourceOrderNo.value)
+			if (order == null) {
+				return
+			}
+			const reason = order.getString('created_reason') ?? ''
+			sourceOrderNo.value = order.getString('order_no') ?? sourceOrderNo.value
+			tradeNo.value = order.getString('payment_no') ?? sourceOrderNo.value
+			orderTime.value = formatOrderTime(order.getString('payment_time') ?? (order.getString('order_time') ?? ''))
+			amountText.value = formatOrderAmount(order.getString('payment_num') ?? '0', false)
+			paymentType.value = paymentTypeText(order.getNumber('payment_type', 0))
+			consumeType.value = reason.length > 0 ? reason : '余额消费'
+			productName.value = reason.length > 0 ? reason : '康复服务'
+			loadProductInfo(reason)
+		}, () => {})
+	}
+
+	function loadProductInfo (reason: string): void {
+		if (reason.indexOf('课程') >= 0) {
+			get('/course_order/order_no/' + sourceOrderNo.value, (res) => {
+				if (res.getNumber('code', 0) === 200) {
+					const order = res.getJSON('data')
+					if (order != null) {
+						consumeType.value = '方案购买'
+						productName.value = courseProductName(order)
+					}
+				}
+			}, () => {})
+			return
+		}
+		if (reason.indexOf('器材') >= 0) {
+			get('/equipment_order/order_no/' + sourceOrderNo.value, (res) => {
+				if (res.getNumber('code', 0) === 200) {
+					const order = res.getJSON('data')
+					if (order != null) {
+						consumeType.value = '器材购买'
+						productName.value = equipmentProductName(order)
+					}
+				}
+			}, () => {})
+		}
+	}
+
+	function copyText (value: string): void {
+		uni.setClipboardData({ data: value })
+	}
+
+	function viewRelatedOrder (): void {
+		uni.showToast({ title: '关联订单功能暂未开放', icon: 'none' })
+	}
+
+	function goBack (): void {
+		uni.navigateBack()
+	}
+</script>
+
+<style lang="scss">
+	.page { display: flex; flex-direction: column; height: 100vh; background: #F7F8FA; }
+	.hero { background-image: linear-gradient(135deg, #FF8A3D 0%, #FF5226 100%); }
+	.safe-nav { width: 100%; }
+	.nav-row { height: 32px; display: flex; flex-direction: row; align-items: center; padding-left: 20px; padding-right: 20px; box-sizing: border-box; }
+	.back-button { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 16px; background: rgba(255, 255, 255, 0.18); }
+	.back-glyph { margin-top: -3px; font-size: 28px; line-height: 28px; color: #FFFFFF; }
+	.nav-title { flex: 1; text-align: center; font-size: 16px; font-weight: 600; color: #FFFFFF; }
+	.nav-placeholder { width: 32px; height: 32px; }
+	.amount-area { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 14px 20px 28px; }
+	.amount-label { font-size: 12px; color: rgba(255, 255, 255, 0.8); }
+	.amount-value { font-size: 34px; font-weight: 700; line-height: 41px; color: #FFFFFF; }
+	.status-pill { padding: 4px 10px; background: rgba(255, 255, 255, 0.18); border-radius: 999px; }
+	.status-text { font-size: 11px; font-weight: 500; color: #FFFFFF; }
+	.content-scroll { flex: 1; height: 0; }
+	.content-inner { display: flex; flex-direction: column; gap: 12px; padding: 20px 16px 48px; }
+	.section-title { font-size: 16px; font-weight: 700; color: #1A1D24; }
+	.info-card { padding: 4px 16px; box-sizing: border-box; background: #FFFFFF; border: 1px solid #EEF0F3; border-radius: 16px; box-shadow: 0 4px 16px rgba(23, 26, 36, 0.04); }
+	.info-row { min-height: 43px; display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 12px 0; box-sizing: border-box; }
+	.info-label { font-size: 13px; color: #9CA3AF; }
+	.info-value { font-size: 13px; font-weight: 500; color: #1A1D24; }
+	.info-product { max-width: 205px; text-align: right; }
+	.info-number { font-family: Inter; }
+	.info-success { color: #FF6B35; }
+	.divider { width: 100%; height: 1px; background: #F1F3F5; }
+	.value-group { display: flex; flex-direction: row; align-items: center; gap: 6px; }
+	.copy-text { font-size: 12px; font-weight: 500; color: #FF6B35; }
+	.help-card { height: 56px; display: flex; flex-direction: row; align-items: center; gap: 10px; padding: 0 16px; box-sizing: border-box; background: #FFFFFF; border: 1px solid #EEF0F3; border-radius: 16px; box-shadow: 0 4px 16px rgba(23, 26, 36, 0.04); }
+	.help-icon-wrap { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: #FFF3EC; border-radius: 8px; }
+	.help-icon { width: 16px; height: 16px; }
+	.help-text { flex: 1; font-size: 13px; font-weight: 500; color: #1A1D24; }
+	.help-arrow { font-size: 22px; line-height: 22px; color: #C3C9D1; }
+</style>

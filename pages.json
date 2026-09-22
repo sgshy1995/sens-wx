@@ -66,6 +66,24 @@
 				"navigationStyle": "custom",
 				"backgroundColor": "#F7F8FA"
 			}
+		},
+		{
+			"path": "pages/recharge-order-detail/recharge-order-detail",
+			"style": {
+				"navigationBarTitleText": "充值详情",
+				"navigationBarTextStyle": "white",
+				"navigationStyle": "custom",
+				"backgroundColor": "#F7F8FA"
+			}
+		},
+		{
+			"path": "pages/consume-order-detail/consume-order-detail",
+			"style": {
+				"navigationBarTitleText": "消费详情",
+				"navigationBarTextStyle": "white",
+				"navigationStyle": "custom",
+				"backgroundColor": "#F7F8FA"
+			}
 		}
 	],
 	"globalStyle": {

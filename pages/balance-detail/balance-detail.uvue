@@ -75,7 +75,7 @@
 						<text class="group-title">{{ group.title }}</text>
 						<text class="group-summary">{{ group.summaryText }}</text>
 					</view>
-					<view v-for="(order, index) in group.orders" :key="order.id" class="order-row">
+					<view v-for="(order, index) in group.orders" :key="order.id" class="order-row" @click="openOrder(order)">
 						<view class="order-icon" :class="order.isIncome ? 'order-icon-income' : 'order-icon-expense'">
 							<text class="order-icon-text" :class="order.isIncome ? 'order-icon-text-income' : 'order-icon-text-expense'">{{ order.isIncome ? '+' : '-' }}</text>
 						</view>
@@ -200,6 +200,13 @@
 
 	function customDateLabel (): string {
 		return dayjs(customDate.value).format('M月D日')
+	}
+
+	function openOrder (order: BalanceOrder): void {
+		const base = order.isIncome ? '/pages/recharge-order-detail/recharge-order-detail' : '/pages/consume-order-detail/consume-order-detail'
+		uni.navigateTo({
+			url: base + '?id=' + encodeURIComponent(order.id) + '&orderNo=' + encodeURIComponent(order.orderNo)
+		})
 	}
 
 	function goBack (): void {
