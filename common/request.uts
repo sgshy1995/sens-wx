@@ -79,3 +79,99 @@ export function put (
 		}
 	})
 }
+
+export function del (
+	url: string,
+	success: (data: UTSJSONObject) => void,
+	fail: (message: string) => void
+): void {
+	uni.request<UTSJSONObject>({
+		url: API_BASE_URL + url,
+		method: 'DELETE',
+		header: buildHeader(),
+		success: (res) => {
+			if (res.data == null) {
+				fail('请求数据为空')
+			} else {
+				success(res.data)
+			}
+		},
+		fail: (err) => {
+			fail(err.errMsg)
+		}
+	})
+}
+
+function arrayBufferToAscii (data: ArrayBuffer): string {
+	const bytes = new Uint8Array(data)
+	let result = ''
+	for (let i = 0; i < bytes.length; i++) {
+		result += String.fromCharCode(bytes[i])
+	}
+	return result
+}
+
+export function postStream (
+	url: string,
+	data: UTSJSONObject,
+	onEvent: (event: string, payload: UTSJSONObject) => void,
+	fail: (message: string) => void,
+	complete: () => void
+): void {
+	// #ifdef MP-WEIXIN
+	let buffer = ''
+	let currentEvent = 'message'
+	const task = wx.request({
+		url: API_BASE_URL + url,
+		method: 'POST',
+		data: data,
+		header: buildHeader(),
+		enableChunked: true,
+		responseType: 'arraybuffer',
+		success: (res) => {
+			if (res.statusCode !== 200) {
+				fail('连接失败，请稍后重试')
+			}
+			complete()
+		},
+		fail: (err) => {
+			fail(err.errMsg)
+			complete()
+		}
+	})
+
+	task.onChunkReceived((res) => {
+		buffer += arrayBufferToAscii(res.data as ArrayBuffer)
+		let lineIndex = buffer.indexOf('\n')
+		while (lineIndex >= 0) {
+			let line = buffer.substring(0, lineIndex)
+			buffer = buffer.substring(lineIndex + 1)
+			line = line.trim()
+			if (line.startsWith('event:')) {
+				currentEvent = line.substring(6).trim()
+			} else if (line.startsWith('data:')) {
+				const payloadText = line.substring(5).trim()
+				if (payloadText.length > 0) {
+					try {
+						const payload = JSON.parse(payloadText) as UTSJSONObject
+						onEvent(currentEvent, payload)
+					} catch (error) {
+						fail('流式数据解析失败')
+					}
+				}
+			}
+			lineIndex = buffer.indexOf('\n')
+		}
+	})
+	// #endif
+
+	// #ifndef MP-WEIXIN
+	post(url, data, (res) => {
+		onEvent('fallback', res)
+		complete()
+	}, (message) => {
+		fail(message)
+		complete()
+	})
+	// #endif
+}

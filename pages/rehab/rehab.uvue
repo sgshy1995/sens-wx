@@ -2,60 +2,205 @@
 	<view class="page">
 		<view class="nav-space" :style="{ height: statusBarHeight + 'px' }"></view>
 
-		<view class="chat-area">
-			<view class="assistant-header">
-				<view class="assistant-copy">
-					<text class="assistant-title">AI 康复助手</text>
-					<text class="assistant-subtitle">智能评估 · 一键生成专属方案</text>
-				</view>
-			</view>
-
-			<view class="ai-message-row">
-				<image class="ai-avatar" src="/static/icons/ic-star-tip.svg" mode="aspectFit"></image>
-				<view class="ai-bubble">
-					<text class="ai-message">你好！我是你的 AI 康复助手，我还没有你的任何康复记录，先从第一次对话开始吧</text>
-				</view>
-			</view>
-
-			<view class="welcome-card">
-				<image class="welcome-illustration" src="/static/icons/ic-heart-beat.svg" mode="aspectFit"></image>
-				<text class="welcome-title">开始你的第一次对话</text>
-				<text class="welcome-description">在下方输入框描述你的伤痛或康复目标，我会为你生成专属康复方案</text>
-				<view class="guide-row">
-					<image class="guide-arrow" src="/static/icons/ic-down-arrow.svg" mode="aspectFit"></image>
-					<text class="guide-text">直接输入，或点选下方常见问题</text>
-				</view>
-			</view>
-
-			<text class="quick-question-label">你可以这样问我</text>
-
-			<view class="quick-question-list">
-				<view v-for="(question, index) in quickQuestions" :key="index" class="quick-question-chip">
-					<text class="quick-question-text">{{ question }}</text>
-				</view>
+		<view class="assistant-header">
+			<view class="assistant-copy">
+				<text class="assistant-title">AI 康复助手</text>
+				<text class="assistant-subtitle">智能评估 · 一键生成专属方案</text>
 			</view>
 		</view>
+
+		<view v-if="topics.length > 0" class="topic-toolbar">
+			<view class="topic-toolbar-main" @click="openTopicDrawer">
+				<image class="topic-toolbar-icon" src="/static/icons/ic-comment.svg" mode="aspectFit"></image>
+				<view class="topic-toolbar-copy">
+					<text class="topic-toolbar-label">当前话题</text>
+					<text class="topic-toolbar-title">{{ currentTopicTitle }}</text>
+				</view>
+				<text class="topic-toolbar-action">历史话题</text>
+			</view>
+			<view class="topic-toolbar-new" @click="createNewTopic(false)">
+				<text class="topic-toolbar-new-text">+ 新建</text>
+			</view>
+		</view>
+
+		<scroll-view
+			class="chat-scroll"
+			scroll-y
+			:scroll-top="scrollTop"
+			:scroll-into-view="scrollIntoView"
+			:upper-threshold="48"
+			@scrolltoupper="loadOlderMessages"
+		>
+			<view class="message-list">
+				<view v-if="initialLoading" class="list-status"><text>正在加载对话...</text></view>
+				<view v-else-if="loadingOlder" class="list-status"><text>正在加载更早消息...</text></view>
+				<view v-else-if="hasMore" class="list-status"><text>上拉加载更早消息</text></view>
+
+				<view v-if="messages.length === 0 && !initialLoading && !sending" class="message-row">
+					<view class="ai-avatar">
+						<image class="ai-avatar-icon" src="/static/icons/ic-star-tip.svg" mode="aspectFit"></image>
+					</view>
+					<view class="message-bubble ai-bubble">
+						<text class="message-text">说说你的伤痛或康复目标，我来帮你</text>
+					</view>
+				</view>
+
+				<view v-if="messages.length === 0 && topics.length === 0 && !initialLoading && !sending" class="welcome-card">
+					<image class="welcome-illustration" src="/static/icons/ic-heart-beat.svg" mode="aspectFit"></image>
+					<text class="welcome-title">开始你的第一次对话</text>
+					<text class="welcome-description">在下方输入框描述你的伤痛或康复目标，我会为你匹配康复方案</text>
+					<view class="guide-row">
+						<image class="guide-arrow" src="/static/icons/ic-down-arrow.svg" mode="aspectFit"></image>
+						<text class="guide-text">直接输入，或点选下方常见问题</text>
+					</view>
+				</view>
+
+				<view v-if="messages.length === 0 && !initialLoading && !sending" class="quick-panel">
+					<text class="quick-question-label">你可以这样问我</text>
+					<view class="quick-question-list">
+						<view v-for="(question, index) in quickQuestions" :key="index" class="quick-question-chip" @click="askQuickQuestion(question)">
+							<text class="quick-question-text">{{ question }}</text>
+						</view>
+					</view>
+				</view>
+
+				<view v-for="(item, index) in messages" v-show="item.visible" :key="item.id + '-' + index" class="message-row" :class="{ 'message-row-user': item.role === 'user' }">
+					<view v-if="item.role === 'assistant'" class="ai-avatar">
+						<image class="ai-avatar-icon" src="/static/icons/ic-star-tip.svg" mode="aspectFit"></image>
+					</view>
+					<view class="message-bubble" :class="item.role === 'user' ? 'user-bubble' : 'ai-bubble'">
+						<text class="message-text" :class="{ 'user-message-text': item.role === 'user' }">{{ item.content }}</text>
+						<view v-if="item.course != null" class="course-card">
+							<view class="course-card-head">
+								<view class="course-tag-row">
+									<view class="course-tag"><text>{{ item.course.tagName }}</text></view>
+									<view class="course-tag course-tag-stage"><text>{{ item.course.stageTitle }}</text></view>
+								</view>
+								<text class="course-title">{{ item.course.title }}</text>
+								<text v-if="item.course.dictionaryText.length > 0" class="course-dictionary">{{ item.course.dictionaryText }}</text>
+								<text v-if="item.course.stageIndexText.length > 0" class="course-stage-text">{{ item.course.stageIndexText }}</text>
+							</view>
+							<view class="unlock-mask">
+								<view class="lock-badge">
+									<view class="lock-ring"></view>
+									<view class="lock-body"><view class="lock-hole"></view></view>
+								</view>
+								<text class="unlock-title">解锁查看完整康复方案</text>
+								<text class="unlock-subtitle">完整阶段安排 · 动作图文详解 · 视频跟练</text>
+								<view class="unlock-button" @click="onUnlockTap">
+									<text class="unlock-button-text">{{ item.course.unlockButtonText }}</text>
+								</view>
+							</view>
+						</view>
+						<view v-if="item.streaming" class="stream-cursor"></view>
+						<text v-if="item.pending" class="message-status">发送中</text>
+					</view>
+					<view v-if="item.role === 'user'" class="user-avatar"><text class="user-avatar-text">我</text></view>
+				</view>
+
+				<view v-if="sending && waitingFirstToken" class="message-row">
+					<view class="ai-avatar">
+						<image class="ai-avatar-icon" src="/static/icons/ic-star-tip.svg" mode="aspectFit"></image>
+					</view>
+					<view class="message-bubble ai-bubble thinking-bubble">
+						<text class="thinking-text">正在分析你的康复需求</text>
+						<view class="thinking-dots">
+							<view class="thinking-dot dot-one"></view>
+							<view class="thinking-dot dot-two"></view>
+							<view class="thinking-dot dot-three"></view>
+						</view>
+					</view>
+				</view>
+
+				<view id="chat-bottom" class="chat-bottom-space"></view>
+			</view>
+		</scroll-view>
 
 		<view class="input-bar">
 			<view class="input-box">
 				<input
 					class="chat-input"
 					:value="message"
+					:disabled="sending"
 					placeholder="描述你的伤痛或康复目标…"
 					placeholder-class="chat-input-placeholder"
+					confirm-type="send"
 					@input="onMessageInput"
+					@confirm="sendMessage"
 				/>
 			</view>
-			<view class="send-button">
+			<view class="send-button" :class="{ 'send-button-disabled': sending }" @click="sendMessage">
 				<image class="send-image" src="/static/icons/ic-send.svg" mode="aspectFit"></image>
+			</view>
+		</view>
+
+		<view v-if="topicDrawerVisible" class="topic-mask" @click="closeTopicDrawer">
+			<view class="topic-panel" @click.stop>
+				<view class="topic-panel-header">
+					<view class="topic-panel-title-wrap">
+						<text class="topic-panel-title">对话话题</text>
+						<text class="topic-panel-subtitle">每个话题独立保存上下文</text>
+					</view>
+					<view class="topic-close" @click="closeTopicDrawer">
+						<text class="topic-close-text">关闭</text>
+					</view>
+				</view>
+				<view class="new-topic-button" @click="createNewTopic(false)">
+					<text class="new-topic-button-text">+ 新建话题</text>
+				</view>
+				<scroll-view class="topic-list-scroll" scroll-y>
+					<view
+						v-for="topic in topics"
+						:key="topic.id"
+						class="topic-row"
+						:class="{ 'topic-row-active': topic.id === sessionId }"
+						@click="enterTopic(topic)"
+					>
+						<view class="topic-copy">
+							<text class="topic-title">{{ topic.title }}</text>
+							<text class="topic-meta">{{ topic.messageCount }} 条消息 · {{ topic.timeText }}</text>
+						</view>
+						<view class="topic-delete" @click.stop="confirmDeleteTopic(topic)">
+							<text class="topic-delete-text">删除</text>
+						</view>
+					</view>
+					<view v-if="topics.length === 0 && !loadingTopics" class="topic-empty">
+						<text class="topic-empty-text">还没有历史话题</text>
+					</view>
+					<view v-if="loadingTopics" class="topic-empty">
+						<text class="topic-empty-text">正在加载...</text>
+					</view>
+				</scroll-view>
 			</view>
 		</view>
 	</view>
 </template>
 
 <script setup lang="uts">
+	import { hasLocalToken } from '../../common/auth'
+	import { RehabChatMessage, RehabChatTopic } from '../../common/rehab-chat'
+	import { del, get, post, postStream } from '../../common/request'
+
 	const statusBarHeight = ref(24)
 	const message = ref('')
+	const messages = ref<RehabChatMessage[]>([])
+	const topics = ref<RehabChatTopic[]>([])
+	const sessionId = ref('')
+	const currentTopicTitle = ref('新话题')
+	const nextBefore = ref('')
+	const hasMore = ref(false)
+	const sending = ref(false)
+	const loadingOlder = ref(false)
+	const loadingLatest = ref(false)
+	const loadingTopics = ref(false)
+	const topicDrawerVisible = ref(false)
+	const initialLoading = ref(true)
+	const waitingFirstToken = ref(false)
+	const streamingMessageId = ref('')
+	const pendingUserMessageId = ref('')
+	const lastScrollAt = ref(0)
+	const scrollTop = ref(0)
+	const scrollIntoView = ref('')
 	const quickQuestions = ref<string[]>([
 		'跑步膝痛怎么恢复',
 		'肩颈酸痛怎么缓解',
@@ -66,10 +211,543 @@
 	onLoad(() => {
 		const sys = uni.getSystemInfoSync()
 		statusBarHeight.value = sys.statusBarHeight
+		loadLatestSession()
 	})
+
+	onShow(() => {
+		if (hasLocalToken() && messages.value.length === 0 && sessionId.value.length === 0) {
+			loadLatestSession()
+		}
+	})
+
+	function parseMessageList (data: UTSJSONObject): RehabChatMessage[] {
+		const result: RehabChatMessage[] = []
+		const list = data.getArray<UTSJSONObject>('messages')
+		if (list == null) {
+			return result
+		}
+		for (let i = 0; i < list.length; i++) {
+			const item = new RehabChatMessage()
+			item.initFromJSON(list[i])
+			result.push(item)
+		}
+		return result
+	}
+
+	function loadLatestSession (): void {
+		if (loadingLatest.value) {
+			return
+		}
+		if (!hasLocalToken()) {
+			initialLoading.value = false
+			return
+		}
+		loadingLatest.value = true
+		get('/rehab_chat/latest', (res) => {
+			loadingLatest.value = false
+			initialLoading.value = false
+			if (res.getNumber('code', 0) !== 200) {
+				return
+			}
+			const data = res.getJSON('data')
+			if (data == null) {
+				return
+			}
+			const session = data.getJSON('session')
+			if (session == null) {
+				sessionId.value = ''
+				currentTopicTitle.value = '新话题'
+				messages.value = []
+				hasMore.value = false
+				nextBefore.value = ''
+				loadTopics()
+				return
+			}
+			sessionId.value = session.getString('id') ?? ''
+			currentTopicTitle.value = session.getString('title') ?? '新话题'
+			messages.value = parseMessageList(data)
+			hasMore.value = data.getBoolean('has_more') ?? false
+			nextBefore.value = data.getString('next_before') ?? ''
+			loadTopics()
+			scrollToBottom()
+		}, () => {
+			loadingLatest.value = false
+			initialLoading.value = false
+		})
+	}
+
+	function loadTopics (): void {
+		if (!hasLocalToken() || loadingTopics.value) {
+			return
+		}
+		loadingTopics.value = true
+		get('/rehab_chat/topics', (res) => {
+			loadingTopics.value = false
+			if (res.getNumber('code', 0) !== 200) {
+				return
+			}
+			const data = res.getJSON('data')
+			if (data == null) {
+				return
+			}
+			const list = data.getArray<UTSJSONObject>('topics')
+			const parsed: RehabChatTopic[] = []
+			if (list != null) {
+				for (let i = 0; i < list.length; i++) {
+					const topic = new RehabChatTopic()
+					topic.initFromJSON(list[i])
+					parsed.push(topic)
+				}
+			}
+			topics.value = parsed
+		}, () => {
+			loadingTopics.value = false
+		})
+	}
+
+	function loadOlderMessages (): void {
+		if (loadingOlder.value || !hasMore.value || sessionId.value.length === 0 || nextBefore.value.length === 0) {
+			return
+		}
+		loadingOlder.value = true
+		const url = '/rehab_chat/topics/' + encodeURIComponent(sessionId.value) + '/messages?before=' + encodeURIComponent(nextBefore.value) + '&pageSize=20'
+		get(url, (res) => {
+			loadingOlder.value = false
+			if (res.getNumber('code', 0) !== 200) {
+				return
+			}
+			const data = res.getJSON('data')
+			if (data == null) {
+				return
+			}
+			const older = parseMessageList(data)
+			if (older.length > 0) {
+				const merged: RehabChatMessage[] = []
+				for (let i = 0; i < older.length; i++) {
+					merged.push(older[i])
+				}
+				for (let i = 0; i < messages.value.length; i++) {
+					merged.push(messages.value[i])
+				}
+				messages.value = merged
+				nextBefore.value = older[0].createdAt
+				scrollTop.value = scrollTop.value + 520
+			}
+			hasMore.value = data.getBoolean('has_more') ?? false
+		}, () => {
+			loadingOlder.value = false
+		})
+	}
 
 	function onMessageInput (event: UniEvent): void {
 		message.value = event.detail.value as string
+	}
+
+	function askQuickQuestion (question: string): void {
+		message.value = question
+		sendMessage()
+	}
+
+	function sendMessage (): void {
+		if (sending.value) {
+			return
+		}
+		const content = message.value.trim()
+		if (content.length === 0) {
+			uni.showToast({
+				title: '请先描述你的康复问题',
+				icon: 'none'
+			})
+			return
+		}
+		if (content.length > 300) {
+			uni.showToast({
+				title: '单次描述请控制在300字以内',
+				icon: 'none'
+			})
+			return
+		}
+		if (!hasLocalToken()) {
+			uni.showToast({
+				title: '请先登录后再咨询',
+				icon: 'none'
+			})
+			uni.navigateTo({ url: '/pages/login-guide/login-guide' })
+			return
+		}
+
+		const now = Date.now().toString()
+		const tempId = 'temp-' + now
+		const tempMessage = new RehabChatMessage()
+		tempMessage.id = tempId
+		tempMessage.role = 'user'
+		tempMessage.content = content
+		tempMessage.createdAt = new Date().toISOString()
+		tempMessage.timeText = '刚刚'
+		tempMessage.pending = true
+		messages.value.push(tempMessage)
+
+		const assistantId = 'stream-' + now
+		const assistantPlaceholder = new RehabChatMessage()
+		assistantPlaceholder.id = assistantId
+		assistantPlaceholder.role = 'assistant'
+		assistantPlaceholder.content = ''
+		assistantPlaceholder.createdAt = new Date().toISOString()
+		assistantPlaceholder.timeText = '刚刚'
+		assistantPlaceholder.visible = false
+		assistantPlaceholder.streaming = true
+		messages.value.push(assistantPlaceholder)
+
+		pendingUserMessageId.value = tempId
+		streamingMessageId.value = assistantId
+		message.value = ''
+		sending.value = true
+		waitingFirstToken.value = true
+		scrollToBottom()
+
+		const body = new UTSJSONObject()
+		body.set('content', content)
+		if (sessionId.value.length > 0) {
+			body.set('topic_id', sessionId.value)
+		}
+		postStream('/rehab_chat/message/stream', body, handleStreamEvent, (msg) => {
+			handleStreamFailure(msg)
+		}, () => {
+			if (sending.value) {
+				handleStreamFailure('连接已结束，请稍后重试')
+			}
+		})
+	}
+
+	function handleStreamEvent (event: string, payload: UTSJSONObject): void {
+		if (event === 'start') {
+			const session = payload.getJSON('session')
+			if (session != null) {
+				sessionId.value = session.getString('id') ?? sessionId.value
+				currentTopicTitle.value = session.getString('title') ?? currentTopicTitle.value
+			}
+			const userMessage = payload.getJSON('user_message')
+			if (userMessage != null) {
+				replacePendingUserMessage(userMessage)
+			}
+			return
+		}
+		if (event === 'delta') {
+			const chunk = payload.getString('content') ?? ''
+			appendStreamDelta(chunk)
+			return
+		}
+		if (event === 'replace') {
+			replaceStreamingContent(payload.getString('content') ?? '')
+			return
+		}
+		if (event === 'message') {
+			finalizeStreamMessage(payload)
+			return
+		}
+		if (event === 'done') {
+			sending.value = false
+			waitingFirstToken.value = false
+			finishStreamingMessage()
+			loadTopics()
+			scrollToBottom()
+			return
+		}
+		if (event === 'error') {
+			handleStreamFailure(payload.getString('message') ?? '发送失败')
+			return
+		}
+		if (event === 'fallback') {
+			handleFallbackResult(payload)
+		}
+	}
+
+	function appendStreamDelta (chunk: string): void {
+		if (chunk.length === 0) {
+			return
+		}
+		const index = findMessageIndex(streamingMessageId.value)
+		if (index < 0) {
+			return
+		}
+		waitingFirstToken.value = false
+		messages.value[index].visible = true
+		messages.value[index].content += chunk
+		const now = Date.now()
+		if (now - lastScrollAt.value > 120) {
+			lastScrollAt.value = now
+			scrollToBottom()
+		}
+	}
+
+	function replaceStreamingContent (content: string): void {
+		const index = findMessageIndex(streamingMessageId.value)
+		if (index >= 0) {
+			messages.value[index].visible = true
+			messages.value[index].content = content
+		}
+		waitingFirstToken.value = false
+	}
+
+	function finalizeStreamMessage (payload: UTSJSONObject): void {
+		const session = payload.getJSON('session')
+		if (session != null) {
+			sessionId.value = session.getString('id') ?? sessionId.value
+			currentTopicTitle.value = session.getString('title') ?? currentTopicTitle.value
+		}
+		const assistantJson = payload.getJSON('assistant_message')
+		if (assistantJson == null) {
+			return
+		}
+		const finalMessage = new RehabChatMessage()
+		finalMessage.initFromJSON(assistantJson)
+		const index = findMessageIndex(streamingMessageId.value)
+		if (index >= 0) {
+			messages.value[index] = finalMessage
+		} else {
+			messages.value.push(finalMessage)
+		}
+		waitingFirstToken.value = false
+		scrollToBottom()
+	}
+
+	function finishStreamingMessage (): void {
+		const index = findMessageIndex(streamingMessageId.value)
+		if (index >= 0) {
+			messages.value[index].streaming = false
+			if (messages.value[index].content.length === 0) {
+				messages.value[index].content = '我暂时没有生成完整回复，请再试一次。'
+				messages.value[index].visible = true
+			}
+		}
+	}
+
+	function handleStreamFailure (messageText: string): void {
+		sending.value = false
+		waitingFirstToken.value = false
+		const userIndex = findMessageIndex(pendingUserMessageId.value)
+		if (userIndex >= 0) {
+			messages.value[userIndex].pending = false
+			messages.value[userIndex].matchStatus = 'failed'
+		}
+		const assistantIndex = findMessageIndex(streamingMessageId.value)
+		if (assistantIndex >= 0) {
+			messages.value[assistantIndex].visible = true
+			messages.value[assistantIndex].streaming = false
+			messages.value[assistantIndex].content = messageText
+		}
+		uni.showToast({
+			title: messageText,
+			icon: 'none'
+		})
+	}
+
+	function handleFallbackResult (res: UTSJSONObject): void {
+		sending.value = false
+		waitingFirstToken.value = false
+		const code = res.getNumber('code', 0)
+		if (code !== 200) {
+			handleStreamFailure(res.getString('message') ?? '发送失败')
+			return
+		}
+		const data = res.getJSON('data')
+		if (data == null) {
+			handleStreamFailure('发送失败')
+			return
+		}
+		const session = data.getJSON('session')
+		if (session != null) {
+			sessionId.value = session.getString('id') ?? sessionId.value
+			currentTopicTitle.value = session.getString('title') ?? currentTopicTitle.value
+		}
+		const userMessage = data.getJSON('user_message')
+		if (userMessage != null) {
+			replacePendingUserMessage(userMessage)
+		}
+		const assistantJson = data.getJSON('assistant_message')
+		if (assistantJson != null) {
+			finalizeStreamMessage(data)
+		}
+	}
+
+	function replacePendingUserMessage (userMessage: UTSJSONObject): void {
+		const index = findMessageIndex(pendingUserMessageId.value)
+		if (index < 0) {
+			return
+		}
+		const finalUserMessage = new RehabChatMessage()
+		finalUserMessage.initFromJSON(userMessage)
+		messages.value[index] = finalUserMessage
+		pendingUserMessageId.value = finalUserMessage.id
+	}
+
+	function findMessageIndex (id: string): number {
+		for (let i = 0; i < messages.value.length; i++) {
+			if (messages.value[i].id === id) {
+				return i
+			}
+		}
+		return -1
+	}
+
+	function scrollToBottom (): void {
+		scrollIntoView.value = ''
+		setTimeout(() => {
+			scrollIntoView.value = 'chat-bottom'
+		}, 20)
+	}
+
+	function openTopicDrawer (): void {
+		if (sending.value) {
+			uni.showToast({
+				title: '回复生成中，请稍后再切换',
+				icon: 'none'
+			})
+			return
+		}
+		topicDrawerVisible.value = true
+		loadTopics()
+	}
+
+	function closeTopicDrawer (): void {
+		topicDrawerVisible.value = false
+	}
+
+	function createNewTopic (silent: boolean): void {
+		if (sending.value) {
+			return
+		}
+		if (!silent && sessionId.value.length > 0 && currentTopicTitle.value === '新话题' && messages.value.length === 0) {
+			topicDrawerVisible.value = false
+			return
+		}
+		const body = new UTSJSONObject()
+		post('/rehab_chat/topics', body, (res) => {
+			if (res.getNumber('code', 0) !== 200) {
+				if (!silent) {
+					uni.showToast({
+						title: res.getString('message') ?? '创建话题失败',
+						icon: 'none'
+					})
+				}
+				return
+			}
+			const data = res.getJSON('data')
+			const topic = data == null ? null : data.getJSON('topic')
+			if (topic == null) {
+				return
+			}
+			sessionId.value = topic.getString('id') ?? ''
+			currentTopicTitle.value = topic.getString('title') ?? '新话题'
+			messages.value = []
+			hasMore.value = false
+			nextBefore.value = ''
+			topicDrawerVisible.value = false
+			loadTopics()
+			if (!silent) {
+				uni.showToast({
+					title: '已新建话题',
+					icon: 'none'
+				})
+			}
+		}, (message) => {
+			if (!silent) {
+				uni.showToast({
+					title: message,
+					icon: 'none'
+				})
+			}
+		})
+	}
+
+	function enterTopic (topic: RehabChatTopic): void {
+		if (sending.value) {
+			return
+		}
+		if (topic.id === sessionId.value) {
+			topicDrawerVisible.value = false
+			return
+		}
+		sessionId.value = topic.id
+		currentTopicTitle.value = topic.title
+		messages.value = []
+		hasMore.value = false
+		nextBefore.value = ''
+		topicDrawerVisible.value = false
+		loadTopicMessages(topic.id)
+	}
+
+	function loadTopicMessages (topicId: string): void {
+		initialLoading.value = true
+		const url = '/rehab_chat/topics/' + encodeURIComponent(topicId) + '/messages?pageSize=20'
+		get(url, (res) => {
+			initialLoading.value = false
+			if (res.getNumber('code', 0) !== 200) {
+				return
+			}
+			const data = res.getJSON('data')
+			if (data == null) {
+				return
+			}
+			const session = data.getJSON('session')
+			if (session != null) {
+				currentTopicTitle.value = session.getString('title') ?? currentTopicTitle.value
+			}
+			messages.value = parseMessageList(data)
+			hasMore.value = data.getBoolean('has_more') ?? false
+			nextBefore.value = data.getString('next_before') ?? ''
+			scrollToBottom()
+		}, () => {
+			initialLoading.value = false
+		})
+	}
+
+	function confirmDeleteTopic (topic: RehabChatTopic): void {
+		if (sending.value) {
+			return
+		}
+		uni.showModal({
+			title: '删除话题',
+			content: '删除后该话题下的对话记录会一并删除，确定吗？',
+			success: (result) => {
+				if (!result.confirm) {
+					return
+				}
+				deleteTopic(topic)
+			}
+		})
+	}
+
+	function deleteTopic (topic: RehabChatTopic): void {
+		del('/rehab_chat/topics/' + encodeURIComponent(topic.id), (res) => {
+			if (res.getNumber('code', 0) !== 200) {
+				uni.showToast({
+					title: res.getString('message') ?? '删除失败',
+					icon: 'none'
+				})
+				return
+			}
+			topicDrawerVisible.value = false
+			if (topic.id === sessionId.value) {
+				sessionId.value = ''
+				messages.value = []
+				currentTopicTitle.value = '新话题'
+				loadLatestSession()
+			}
+			loadTopics()
+		}, (message) => {
+			uni.showToast({
+				title: message,
+				icon: 'none'
+			})
+		})
+	}
+
+	function onUnlockTap (): void {
+		uni.showToast({
+			title: '解锁能力将后续接入',
+			icon: 'none'
+		})
 	}
 </script>
 
@@ -86,29 +764,22 @@
 		background: #FFFFFF;
 	}
 
-	.chat-area {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		gap: 12px;
-		padding: 0 16px;
-		background: #FFFFFF;
-	}
-
 	.assistant-header {
 		display: flex;
 		flex-direction: row;
 		align-items: center;
-		height: 44px;
-		margin-bottom: 8px;
-		padding-right: 96px;
+		height: 52px;
+		padding: 0 16px;
 		box-sizing: border-box;
+		background: #FFFFFF;
 	}
 
 	.assistant-copy {
+		flex: 1;
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
+		min-width: 0;
 	}
 
 	.assistant-title {
@@ -119,40 +790,118 @@
 	}
 
 	.assistant-subtitle {
+		display: block;
+		max-width: 220px;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
 		font-size: 11px;
 		font-weight: 400;
 		line-height: 16px;
 		color: #9CA3AF;
 	}
 
-	.ai-message-row {
+	.topic-toolbar {
 		display: flex;
 		flex-direction: row;
-		align-items: flex-start;
+		align-items: center;
 		gap: 8px;
+		padding: 0 16px 10px;
+		box-sizing: border-box;
+		background: #FFFFFF;
+		border-bottom: 1px solid #F1F2F4;
 	}
 
-	.ai-avatar {
-		width: 32px;
-		height: 32px;
+	.topic-toolbar-main {
+		flex: 1;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 10px;
+		height: 40px;
+		padding: 0 12px;
+		box-sizing: border-box;
+		border-radius: 14px;
+		background: #F7F8FA;
+		min-width: 0;
+	}
+
+	.topic-toolbar-icon {
+		width: 18px;
+		height: 18px;
 		flex-shrink: 0;
 	}
 
-	.ai-bubble {
+	.topic-toolbar-copy {
 		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
 		min-width: 0;
-		padding: 12px;
-		box-sizing: border-box;
-		background: #F7F8FA;
-		border-radius: 14px;
 	}
 
-	.ai-message {
+	.topic-toolbar-label {
+		font-size: 10px;
+		line-height: 14px;
+		color: #9CA3AF;
+	}
+
+	.topic-toolbar-title {
 		display: block;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
 		font-size: 13px;
-		font-weight: 400;
-		line-height: 20px;
+		font-weight: 600;
+		line-height: 18px;
 		color: #1A1D24;
+	}
+
+	.topic-toolbar-action {
+		flex-shrink: 0;
+		font-size: 11px;
+		font-weight: 500;
+		color: #FF6B35;
+	}
+
+	.topic-toolbar-new {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 66px;
+		height: 40px;
+		flex-shrink: 0;
+		border-radius: 14px;
+		background: #FF6B35;
+	}
+
+	.topic-toolbar-new-text {
+		font-size: 12px;
+		font-weight: 600;
+		color: #FFFFFF;
+	}
+
+	.chat-scroll {
+		flex: 1;
+		height: 0;
+		background: #FFFFFF;
+	}
+
+	.message-list {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		padding: 8px 16px 16px;
+		box-sizing: border-box;
+	}
+
+	.list-status {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 6px 0;
+		font-size: 11px;
+		color: #9CA3AF;
 	}
 
 	.welcome-card {
@@ -208,6 +957,13 @@
 		color: #FF6B35;
 	}
 
+	.quick-panel {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		padding-top: 2px;
+	}
+
 	.quick-question-label {
 		display: block;
 		font-size: 11px;
@@ -240,6 +996,302 @@
 		color: #4B5563;
 	}
 
+	.message-row {
+		display: flex;
+		flex-direction: row;
+		align-items: flex-start;
+		gap: 8px;
+		width: 100%;
+		box-sizing: border-box;
+	}
+
+	.message-row-user {
+		justify-content: flex-end;
+	}
+
+	.ai-avatar {
+		width: 32px;
+		height: 32px;
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 16px;
+		background-color: #FF6B35;
+		background-image: linear-gradient(135deg, #FF8A3D 0%, #FF5124 100%);
+	}
+
+	.ai-avatar-icon {
+		width: 18px;
+		height: 18px;
+	}
+
+	.user-avatar {
+		width: 32px;
+		height: 32px;
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 16px;
+		background: #1A1D24;
+	}
+
+	.user-avatar-text {
+		font-size: 12px;
+		font-weight: 600;
+		color: #FFFFFF;
+	}
+
+	.message-bubble {
+		max-width: 282px;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		padding: 12px;
+		box-sizing: border-box;
+		border-radius: 14px;
+	}
+
+	.ai-bubble {
+		background: #F7F8FA;
+	}
+
+	.user-bubble {
+		background: #FF6B35;
+	}
+
+	.message-text {
+		display: block;
+		font-size: 13px;
+		font-weight: 400;
+		line-height: 20px;
+		color: #1A1D24;
+		word-break: break-all;
+	}
+
+	.user-message-text {
+		color: #FFFFFF;
+	}
+
+	.message-status {
+		font-size: 10px;
+		color: #9CA3AF;
+	}
+
+	.stream-cursor {
+		width: 2px;
+		height: 16px;
+		border-radius: 1px;
+		background: #FF6B35;
+		animation: streamCursorBlink 0.8s infinite;
+	}
+
+	@keyframes streamCursorBlink {
+		0%, 45% {
+			opacity: 1;
+		}
+		46%, 100% {
+			opacity: 0.15;
+		}
+	}
+
+	.user-bubble .message-status {
+		color: rgba(255, 255, 255, 0.75);
+	}
+
+	.course-card {
+		position: relative;
+		width: 258px;
+		overflow: hidden;
+		background: #FFFFFF;
+		border: 1px solid #EDEFF2;
+		border-radius: 12px;
+	}
+
+	.course-card-head {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		padding: 12px;
+		box-sizing: border-box;
+	}
+
+	.course-tag-row {
+		display: flex;
+		flex-direction: row;
+		gap: 6px;
+	}
+
+	.course-tag {
+		padding: 3px 7px;
+		border-radius: 999px;
+		background: #FFF1EA;
+		font-size: 10px;
+		line-height: 14px;
+		color: #FF6B35;
+	}
+
+	.course-tag-stage {
+		background: #F2F4F7;
+		color: #4B5563;
+	}
+
+	.course-title {
+		font-size: 14px;
+		font-weight: 700;
+		line-height: 20px;
+		color: #1A1D24;
+	}
+
+	.course-dictionary {
+		font-size: 11px;
+		line-height: 17px;
+		color: #6B7280;
+	}
+
+	.course-stage-text {
+		font-size: 11px;
+		font-weight: 500;
+		line-height: 16px;
+		color: #FF6B35;
+	}
+
+	.unlock-mask {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 8px;
+		padding: 16px 18px 18px;
+		box-sizing: border-box;
+		background: rgba(255, 255, 255, 0.94);
+		border-top: 1px solid #FFE0D1;
+	}
+
+	.lock-badge {
+		position: relative;
+		width: 44px;
+		height: 44px;
+		border-radius: 22px;
+		background: #FFF3EC;
+	}
+
+	.lock-ring {
+		position: absolute;
+		left: 15px;
+		top: 10px;
+		width: 13px;
+		height: 12px;
+		border: 2px solid #FF6B35;
+		border-radius: 7px 7px 3px 3px;
+		box-sizing: border-box;
+	}
+
+	.lock-body {
+		position: absolute;
+		left: 12px;
+		top: 19px;
+		width: 20px;
+		height: 14px;
+		border-radius: 4px;
+		background: #FF6B35;
+	}
+
+	.lock-hole {
+		position: absolute;
+		left: 7px;
+		top: 4px;
+		width: 6px;
+		height: 6px;
+		border-radius: 3px;
+		background: #FFFFFF;
+	}
+
+	.unlock-title {
+		font-size: 14px;
+		font-weight: 600;
+		line-height: 20px;
+		color: #1A1D24;
+		text-align: center;
+	}
+
+	.unlock-subtitle {
+		font-size: 11px;
+		line-height: 16px;
+		color: #9CA3AF;
+		text-align: center;
+	}
+
+	.unlock-button {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 170px;
+		height: 40px;
+		margin-top: 2px;
+		border-radius: 999px;
+		background-color: #FF6B35;
+		background-image: linear-gradient(135deg, #FF8A3D 0%, #FF5124 100%);
+		box-shadow: 0 6px 14px rgba(255, 81, 36, 0.28);
+	}
+
+	.unlock-button-text {
+		font-size: 14px;
+		font-weight: 600;
+		color: #FFFFFF;
+	}
+
+	.thinking-bubble {
+		flex-direction: row;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.thinking-text {
+		font-size: 13px;
+		line-height: 20px;
+		color: #6B7280;
+	}
+
+	.thinking-dots {
+		display: flex;
+		flex-direction: row;
+		align-items: flex-end;
+		gap: 3px;
+		height: 16px;
+	}
+
+	.thinking-dot {
+		width: 4px;
+		height: 4px;
+		border-radius: 2px;
+		background: #FF6B35;
+		animation: thinking 1s infinite ease-in-out;
+	}
+
+	.dot-two {
+		animation-delay: 0.15s;
+	}
+
+	.dot-three {
+		animation-delay: 0.3s;
+	}
+
+	@keyframes thinking {
+		0%, 80%, 100% {
+			transform: translateY(0);
+			opacity: 0.45;
+		}
+		40% {
+			transform: translateY(-5px);
+			opacity: 1;
+		}
+	}
+
+	.chat-bottom-space {
+		height: 4px;
+	}
+
 	.input-bar {
 		display: flex;
 		flex-direction: row;
@@ -258,7 +1310,7 @@
 		flex-direction: row;
 		align-items: center;
 		height: 40px;
-		padding: 0 12px 0 14px;
+		padding: 0 14px;
 		box-sizing: border-box;
 		background: #F7F8FA;
 		border-radius: 999px;
@@ -285,9 +1337,18 @@
 
 	.send-button {
 		position: relative;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		width: 36px;
 		height: 36px;
 		flex-shrink: 0;
+		background: transparent;
+		overflow: visible;
+	}
+
+	.send-button-disabled {
+		opacity: 0.55;
 	}
 
 	.send-image {
@@ -296,5 +1357,157 @@
 		top: -10px;
 		width: 56px;
 		height: 60px;
+	}
+
+	.topic-mask {
+		position: fixed;
+		left: 0;
+		right: 0;
+		top: 0;
+		bottom: 0;
+		z-index: 20;
+		display: flex;
+		flex-direction: column;
+		justify-content: flex-end;
+		background: rgba(17, 18, 19, 0.38);
+	}
+
+	.topic-panel {
+		display: flex;
+		flex-direction: column;
+		max-height: 72vh;
+		padding: 18px 16px 20px;
+		box-sizing: border-box;
+		background: #FFFFFF;
+		border-radius: 20px 20px 0 0;
+	}
+
+	.topic-panel-header {
+		display: flex;
+		flex-direction: row;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 12px;
+	}
+
+	.topic-panel-title-wrap {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.topic-panel-title {
+		font-size: 18px;
+		font-weight: 700;
+		color: #1A1D24;
+	}
+
+	.topic-panel-subtitle {
+		font-size: 11px;
+		color: #9CA3AF;
+	}
+
+	.topic-close {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		height: 28px;
+		padding: 0 10px;
+		border-radius: 14px;
+		background: #F7F8FA;
+	}
+
+	.topic-close-text {
+		font-size: 12px;
+		color: #6B7280;
+	}
+
+	.new-topic-button {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		height: 42px;
+		margin: 16px 0 12px;
+		border-radius: 12px;
+		background: #FFF1EA;
+	}
+
+	.new-topic-button-text {
+		font-size: 14px;
+		font-weight: 600;
+		color: #FF6B35;
+	}
+
+	.topic-list-scroll {
+		flex: 1;
+		min-height: 120px;
+	}
+
+	.topic-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 12px;
+		padding: 13px 12px;
+		margin-bottom: 8px;
+		border-radius: 12px;
+		background: #F7F8FA;
+		border: 1px solid transparent;
+		box-sizing: border-box;
+	}
+
+	.topic-row-active {
+		background: #FFF7F3;
+		border-color: #FFD8C6;
+	}
+
+	.topic-copy {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+		min-width: 0;
+	}
+
+	.topic-title {
+		display: block;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		font-size: 14px;
+		font-weight: 600;
+		color: #1A1D24;
+	}
+
+	.topic-meta {
+		font-size: 11px;
+		color: #9CA3AF;
+	}
+
+	.topic-delete {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		height: 28px;
+		padding: 0 10px;
+		border-radius: 14px;
+		background: #FFFFFF;
+	}
+
+	.topic-delete-text {
+		font-size: 11px;
+		color: #EF4444;
+	}
+
+	.topic-empty {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 28px 0;
+	}
+
+	.topic-empty-text {
+		font-size: 12px;
+		color: #9CA3AF;
 	}
 </style>
