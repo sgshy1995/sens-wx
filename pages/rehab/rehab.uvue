@@ -1,40 +1,300 @@
 <template>
 	<view class="page">
 		<view class="nav-space" :style="{ height: statusBarHeight + 'px' }"></view>
-		<view class="container">
-			<text class="title">康复</text>
+
+		<view class="chat-area">
+			<view class="assistant-header">
+				<view class="assistant-copy">
+					<text class="assistant-title">AI 康复助手</text>
+					<text class="assistant-subtitle">智能评估 · 一键生成专属方案</text>
+				</view>
+			</view>
+
+			<view class="ai-message-row">
+				<image class="ai-avatar" src="/static/icons/ic-star-tip.svg" mode="aspectFit"></image>
+				<view class="ai-bubble">
+					<text class="ai-message">你好！我是你的 AI 康复助手，我还没有你的任何康复记录，先从第一次对话开始吧</text>
+				</view>
+			</view>
+
+			<view class="welcome-card">
+				<image class="welcome-illustration" src="/static/icons/ic-heart-beat.svg" mode="aspectFit"></image>
+				<text class="welcome-title">开始你的第一次对话</text>
+				<text class="welcome-description">在下方输入框描述你的伤痛或康复目标，我会为你生成专属康复方案</text>
+				<view class="guide-row">
+					<image class="guide-arrow" src="/static/icons/ic-down-arrow.svg" mode="aspectFit"></image>
+					<text class="guide-text">直接输入，或点选下方常见问题</text>
+				</view>
+			</view>
+
+			<text class="quick-question-label">你可以这样问我</text>
+
+			<view class="quick-question-list">
+				<view v-for="(question, index) in quickQuestions" :key="index" class="quick-question-chip">
+					<text class="quick-question-text">{{ question }}</text>
+				</view>
+			</view>
+		</view>
+
+		<view class="input-bar">
+			<view class="input-box">
+				<input
+					class="chat-input"
+					:value="message"
+					placeholder="描述你的伤痛或康复目标…"
+					placeholder-class="chat-input-placeholder"
+					@input="onMessageInput"
+				/>
+			</view>
+			<view class="send-button">
+				<image class="send-image" src="/static/icons/ic-send.svg" mode="aspectFit"></image>
+			</view>
 		</view>
 	</view>
 </template>
 
 <script setup lang="uts">
 	const statusBarHeight = ref(24)
+	const message = ref('')
+	const quickQuestions = ref<string[]>([
+		'跑步膝痛怎么恢复',
+		'肩颈酸痛怎么缓解',
+		'久坐腰背不适',
+		'术后力量怎么练'
+	])
 
 	onLoad(() => {
 		const sys = uni.getSystemInfoSync()
-		const status = sys.statusBarHeight
-		statusBarHeight.value = status
+		statusBarHeight.value = sys.statusBarHeight
 	})
+
+	function onMessageInput (event: UniEvent): void {
+		message.value = event.detail.value as string
+	}
 </script>
 
 <style lang="scss">
 	.page {
 		flex: 1;
-		background: #F7F8FA;
+		min-height: 100vh;
+		display: flex;
+		flex-direction: column;
+		background: #FFFFFF;
 	}
 
 	.nav-space {
-		background: #F7F8FA;
+		background: #FFFFFF;
 	}
 
-	.container {
+	.chat-area {
 		flex: 1;
-		align-items: center;
-		justify-content: center;
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		padding: 0 16px;
+		background: #FFFFFF;
 	}
 
-	.title {
-		font-size: 18px;
-		color: #333;
+	.assistant-header {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		height: 44px;
+		margin-bottom: 8px;
+		padding-right: 96px;
+		box-sizing: border-box;
+	}
+
+	.assistant-copy {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.assistant-title {
+		font-size: 20px;
+		font-weight: 700;
+		line-height: 28px;
+		color: #1A1D24;
+	}
+
+	.assistant-subtitle {
+		font-size: 11px;
+		font-weight: 400;
+		line-height: 16px;
+		color: #9CA3AF;
+	}
+
+	.ai-message-row {
+		display: flex;
+		flex-direction: row;
+		align-items: flex-start;
+		gap: 8px;
+	}
+
+	.ai-avatar {
+		width: 32px;
+		height: 32px;
+		flex-shrink: 0;
+	}
+
+	.ai-bubble {
+		flex: 1;
+		min-width: 0;
+		padding: 12px;
+		box-sizing: border-box;
+		background: #F7F8FA;
+		border-radius: 14px;
+	}
+
+	.ai-message {
+		display: block;
+		font-size: 13px;
+		font-weight: 400;
+		line-height: 20px;
+		color: #1A1D24;
+	}
+
+	.welcome-card {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 10px;
+		padding: 24px 24px 20px;
+		box-sizing: border-box;
+		background: #F7F8FA;
+		border-radius: 14px;
+	}
+
+	.welcome-illustration {
+		width: 72px;
+		height: 72px;
+	}
+
+	.welcome-title {
+		font-size: 16px;
+		font-weight: 700;
+		line-height: 22px;
+		color: #1A1D24;
+		text-align: center;
+	}
+
+	.welcome-description {
+		display: block;
+		width: 100%;
+		font-size: 12px;
+		font-weight: 400;
+		line-height: 18px;
+		color: #9CA3AF;
+		text-align: center;
+	}
+
+	.guide-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.guide-arrow {
+		width: 12px;
+		height: 12px;
+	}
+
+	.guide-text {
+		font-size: 11px;
+		font-weight: 500;
+		line-height: 16px;
+		color: #FF6B35;
+	}
+
+	.quick-question-label {
+		display: block;
+		font-size: 11px;
+		font-weight: 400;
+		line-height: 16px;
+		color: #9CA3AF;
+	}
+
+	.quick-question-list {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
+	.quick-question-chip {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding: 8px 12px;
+		background: #FFFFFF;
+		border: 1px solid #EDEFF2;
+		border-radius: 999px;
+	}
+
+	.quick-question-text {
+		font-size: 12px;
+		font-weight: 400;
+		line-height: 16px;
+		color: #4B5563;
+	}
+
+	.input-bar {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 10px;
+		height: 56px;
+		padding: 0 12px 0 16px;
+		box-sizing: border-box;
+		background: #FFFFFF;
+		box-shadow: 0 -2px 8px rgba(17, 18, 19, 0.05);
+	}
+
+	.input-box {
+		flex: 1;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		height: 40px;
+		padding: 0 12px 0 14px;
+		box-sizing: border-box;
+		background: #F7F8FA;
+		border-radius: 999px;
+	}
+
+	.chat-input {
+		flex: 1;
+		height: 40px;
+		padding: 0;
+		font-size: 13px;
+		font-weight: 400;
+		color: #1A1D24;
+		background: transparent;
+		border: none;
+		outline: none;
+		box-shadow: none;
+		-webkit-appearance: none;
+		appearance: none;
+	}
+
+	.chat-input-placeholder {
+		color: #9CA3AF;
+	}
+
+	.send-button {
+		position: relative;
+		width: 36px;
+		height: 36px;
+		flex-shrink: 0;
+	}
+
+	.send-image {
+		position: absolute;
+		left: -10px;
+		top: -10px;
+		width: 56px;
+		height: 60px;
 	}
 </style>

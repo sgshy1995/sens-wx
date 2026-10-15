@@ -21,7 +21,8 @@
 			"path": "pages/rehab/rehab",
 			"style": {
 				"navigationBarTitleText": "康复",
-				"navigationStyle": "custom"
+				"navigationStyle": "custom",
+				"backgroundColor": "#FFFFFF"
 			}
 		},
 		{
