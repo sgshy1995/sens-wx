@@ -1,0 +1,718 @@
+<template>
+	<view class="page">
+		<view class="safe-nav" :style="{ paddingTop: statusBarHeight + 'px' }">
+			<view class="nav-row">
+				<view class="back-button" @click="goBack">
+					<text class="back-glyph">‹</text>
+				</view>
+				<text class="nav-title">伤痛档案维护</text>
+				<view class="nav-placeholder"></view>
+			</view>
+		</view>
+
+		<scroll-view class="content-scroll" scroll-y>
+			<view class="content-inner">
+				<view class="form-card">
+					<view class="field-head">
+						<text class="field-title">既往伤病史</text>
+						<text class="field-description">什么时间在哪里做过什么治疗，治疗效果如何，是否有明确诊断为何病</text>
+					</view>
+					<textarea
+						class="field-textarea"
+						:value="injuryHistory"
+						maxlength="200"
+						placeholder="请输入..."
+						placeholder-class="field-placeholder"
+						@input="onInjuryHistoryInput"
+					></textarea>
+					<text class="field-count">{{ injuryHistory.length }}/200</text>
+				</view>
+
+				<view class="form-card">
+					<view class="field-head">
+						<text class="field-title">近期伤病描述</text>
+						<text class="field-description">近期伤病情况介绍，受伤时间、受伤过程、症状描述；受伤部位活动功能是否受到影响，日常生活活动是否受到影响等</text>
+					</view>
+					<textarea
+						class="field-textarea"
+						:value="injuryRecent"
+						maxlength="200"
+						placeholder="请输入..."
+						placeholder-class="field-placeholder"
+						@input="onInjuryRecentInput"
+					></textarea>
+					<text class="field-count">{{ injuryRecent.length }}/200</text>
+				</view>
+
+				<view class="form-card">
+					<view class="field-head">
+						<text class="field-title">出院小结</text>
+						<text class="field-description">何时出院，治疗结果，医生嘱托，后续治疗方案</text>
+					</view>
+					<textarea
+						class="field-textarea"
+						:value="dischargeAbstract"
+						maxlength="200"
+						placeholder="请输入..."
+						placeholder-class="field-placeholder"
+						@input="onDischargeAbstractInput"
+					></textarea>
+					<text class="field-count">{{ dischargeAbstract.length }}/200</text>
+				</view>
+
+				<view class="form-card">
+					<view class="field-head">
+						<text class="field-title">上传照片或视频</text>
+						<text class="field-description">影像资料，诊断报告，受伤部位等资料，最多上传9张</text>
+					</view>
+
+					<view class="media-grid">
+						<view v-for="(item, index) in mediaList" :key="index" class="media-item">
+							<image
+								v-if="item.mediaType === 'image'"
+								class="media-content"
+								:src="mediaDisplayUrl(item)"
+								mode="aspectFill"
+								@click="previewImage(item)"
+							></image>
+							<view v-else class="media-video" @click="previewVideo(item)">
+								<image v-if="item.thumbPath.length > 0" class="media-content" :src="item.thumbPath" mode="aspectFill"></image>
+								<view v-else class="media-video-placeholder">
+									<text class="media-video-glyph">▶</text>
+									<text class="media-video-text">视频</text>
+								</view>
+							</view>
+							<view v-if="item.uploading" class="media-mask">
+								<text class="media-mask-text">上传中</text>
+							</view>
+							<view v-if="item.failed" class="media-mask media-mask-failed">
+								<text class="media-mask-text">上传失败</text>
+							</view>
+							<view class="media-delete" @click.stop="removeMedia(index)">
+								<text class="media-delete-text">×</text>
+							</view>
+						</view>
+
+						<view v-if="mediaList.length < 9" class="media-add" @click="showMediaPicker">
+							<text class="media-add-glyph">+</text>
+							<text class="media-add-text">添加</text>
+						</view>
+					</view>
+					<text class="media-count">{{ mediaList.length }}/9</text>
+				</view>
+			</view>
+		</scroll-view>
+
+		<view class="footer">
+			<button class="save-button" :class="{ 'save-button-disabled': saving }" :disabled="saving" hover-class="none" @click="handleSave">
+				<text class="save-button-text">{{ saving ? '保存中...' : '保存' }}</text>
+			</button>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { fetchCurrentUserInfo, hasLocalToken } from '../../common/auth'
+	import { API_BASE_URL } from '../../common/config'
+	import { resolveFileUrl } from '../../common/forum'
+	import { PainRecordMedia, buildPainRecordMediaList } from '../../common/pain-record'
+	import { buildUploadHeader, put } from '../../common/request'
+
+	const statusBarHeight = ref(24)
+	const injuryHistory = ref('')
+	const injuryRecent = ref('')
+	const dischargeAbstract = ref('')
+	const mediaList = ref<PainRecordMedia[]>([])
+	const uploadingCount = ref(0)
+	const saving = ref(false)
+
+	onLoad(() => {
+		const sys = uni.getSystemInfoSync()
+		statusBarHeight.value = sys.statusBarHeight
+		if (!hasLocalToken()) {
+			uni.navigateTo({
+				url: '/pages/login-guide/login-guide'
+			})
+			return
+		}
+		loadRecord()
+	})
+
+	function loadRecord (): void {
+		fetchCurrentUserInfo((userInfo) => {
+			injuryHistory.value = userInfo.getString('injury_history') ?? ''
+			injuryRecent.value = userInfo.getString('injury_recent') ?? ''
+			dischargeAbstract.value = userInfo.getString('discharge_abstract') ?? ''
+			mediaList.value = buildPainRecordMediaList(userInfo.getString('image_data') ?? '')
+			uploadingCount.value = 0
+		}, (message) => {
+			uni.showToast({
+				title: message,
+				icon: 'none'
+			})
+		})
+	}
+
+	function onInjuryHistoryInput (event: UniEvent): void {
+		injuryHistory.value = event.detail.value as string
+	}
+
+	function onInjuryRecentInput (event: UniEvent): void {
+		injuryRecent.value = event.detail.value as string
+	}
+
+	function onDischargeAbstractInput (event: UniEvent): void {
+		dischargeAbstract.value = event.detail.value as string
+	}
+
+	function showMediaPicker (): void {
+		if (mediaList.value.length >= 9) {
+			uni.showToast({
+				title: '最多上传9个文件',
+				icon: 'none'
+			})
+			return
+		}
+		uni.showActionSheet({
+			itemList: ['从相册选择照片', '拍照', '从相册选择视频', '拍摄视频'],
+			success: (res) => {
+				const tapIndex = res.tapIndex
+				if (tapIndex === 0 || tapIndex === 1) {
+					chooseImages(tapIndex === 1)
+				} else {
+					chooseVideo(tapIndex === 3)
+				}
+			}
+		})
+	}
+
+	function chooseImages (fromCamera: boolean): void {
+		const remain = 9 - mediaList.value.length
+		if (remain <= 0) {
+			return
+		}
+		if (fromCamera) {
+			wx.chooseImage({
+				count: remain,
+				sourceType: ['camera'],
+				success: (res) => {
+					const paths = res.tempFilePaths
+					for (let i = 0; i < paths.length; i++) {
+						addMedia(paths[i], 'image', '')
+					}
+				}
+			})
+		} else {
+			wx.chooseImage({
+				count: remain,
+				sourceType: ['album'],
+				success: (res) => {
+					const paths = res.tempFilePaths
+					for (let i = 0; i < paths.length; i++) {
+						addMedia(paths[i], 'image', '')
+					}
+				}
+			})
+		}
+	}
+
+	function chooseVideo (fromCamera: boolean): void {
+		if (mediaList.value.length >= 9) {
+			return
+		}
+		if (fromCamera) {
+			wx.chooseVideo({
+				sourceType: ['camera'],
+				compressed: true,
+				maxDuration: 60,
+				camera: 'back',
+				success: (res) => {
+					addMedia(res.tempFilePath, 'video', res.thumbTempFilePath ?? '')
+				}
+			})
+		} else {
+			wx.chooseVideo({
+				sourceType: ['album'],
+				compressed: true,
+				maxDuration: 60,
+				camera: 'back',
+				success: (res) => {
+					addMedia(res.tempFilePath, 'video', res.thumbTempFilePath ?? '')
+				}
+			})
+		}
+	}
+
+	function addMedia (localPath: string, mediaType: string, thumbPath: string): void {
+		const item = new PainRecordMedia()
+		item.localPath = localPath
+		item.thumbPath = thumbPath
+		item.url = localPath
+		item.mediaType = mediaType
+		item.uploading = true
+		mediaList.value.push(item)
+		const index = mediaList.value.length - 1
+		uploadMedia(mediaList.value[index])
+	}
+
+	function uploadMedia (item: PainRecordMedia): void {
+		const uploadUrl = API_BASE_URL + (item.mediaType === 'video' ? '/user_info/upload/video' : '/user_info/upload/data')
+		uploadingCount.value = uploadingCount.value + 1
+		wx.uploadFile({
+			url: uploadUrl,
+			filePath: item.localPath,
+			name: 'file',
+			header: buildUploadHeader(),
+			success: (res) => {
+				let data: UTSJSONObject | null = null
+				try {
+					data = JSON.parse(res.data) as UTSJSONObject
+				} catch (error) {
+					data = null
+				}
+				if (data == null || data.getNumber('code', 0) !== 200) {
+					item.failed = true
+				} else {
+					item.key = data.getString('data') ?? ''
+					item.url = item.key.length > 0 ? resolveFileUrl(item.key) : item.localPath
+					item.failed = item.key.length === 0
+				}
+				item.uploading = false
+				finishUpload()
+			},
+			fail: () => {
+				item.uploading = false
+				item.failed = true
+				finishUpload()
+			}
+		})
+	}
+
+	function finishUpload (): void {
+		uploadingCount.value = uploadingCount.value > 0 ? uploadingCount.value - 1 : 0
+	}
+
+	function mediaDisplayUrl (item: PainRecordMedia): string {
+		return item.url.length > 0 ? item.url : item.localPath
+	}
+
+	function previewImage (item: PainRecordMedia): void {
+		const urls: string[] = []
+		for (let i = 0; i < mediaList.value.length; i++) {
+			const current = mediaList.value[i]
+			if (current.mediaType === 'image') {
+				const url = mediaDisplayUrl(current)
+				if (url.length > 0) {
+					urls.push(url)
+				}
+			}
+		}
+		if (urls.length === 0) {
+			return
+		}
+		uni.previewImage({
+			urls,
+			current: mediaDisplayUrl(item)
+		})
+	}
+
+	function previewVideo (item: PainRecordMedia): void {
+		const url = mediaDisplayUrl(item)
+		if (url.length === 0) {
+			return
+		}
+		wx.previewMedia({
+			sources: [{ url: url, type: 'video' }],
+			current: 0
+		})
+	}
+
+	function removeMedia (index: number): void {
+		if (index < 0 || index >= mediaList.value.length) {
+			return
+		}
+		const nextList: PainRecordMedia[] = []
+		for (let i = 0; i < mediaList.value.length; i++) {
+			if (i !== index) {
+				nextList.push(mediaList.value[i])
+			}
+		}
+		mediaList.value = nextList
+	}
+
+	function validateForm (): string {
+		if (injuryHistory.value.trim().length === 0) {
+			return '请填写既往伤病史'
+		}
+		if (injuryRecent.value.trim().length === 0) {
+			return '请填写近期伤病描述'
+		}
+		if (dischargeAbstract.value.trim().length === 0) {
+			return '请填写出院小结'
+		}
+		if (uploadingCount.value > 0) {
+			return '文件上传中，请稍后再试'
+		}
+		for (let i = 0; i < mediaList.value.length; i++) {
+			if (mediaList.value[i].failed) {
+				return '存在上传失败的文件，请删除后重试'
+			}
+		}
+		return ''
+	}
+
+	function handleSave (): void {
+		if (saving.value) {
+			return
+		}
+		const message = validateForm()
+		if (message.length > 0) {
+			uni.showToast({
+				title: message,
+				icon: 'none'
+			})
+			return
+		}
+
+		const keys: string[] = []
+		for (let i = 0; i < mediaList.value.length; i++) {
+			const key = mediaList.value[i].key
+			if (key.length > 0) {
+				keys.push(key)
+			}
+		}
+		let imageData = ''
+		for (let i = 0; i < keys.length; i++) {
+			if (imageData.length > 0) {
+				imageData += ','
+			}
+			imageData += keys[i]
+		}
+
+		const requestData = new UTSJSONObject()
+		requestData.set('injury_history', injuryHistory.value.trim())
+		requestData.set('injury_recent', injuryRecent.value.trim())
+		requestData.set('discharge_abstract', dischargeAbstract.value.trim())
+		requestData.set('image_data', imageData)
+
+		saving.value = true
+		uni.showLoading({
+			title: '保存中',
+			mask: true
+		})
+
+		put('/user_info/jwt', requestData, (res) => {
+			const code = res.getNumber('code', 0)
+			finishSave()
+			if (code !== 200) {
+				uni.showToast({
+					title: res.getString('message') ?? '保存失败',
+					icon: 'none'
+				})
+				return
+			}
+			fetchCurrentUserInfo(() => {}, () => {})
+			uni.showToast({
+				title: '保存成功',
+				icon: 'success'
+			})
+			setTimeout(() => {
+				uni.navigateBack()
+			}, 600)
+		}, (message) => {
+			finishSave()
+			uni.showToast({
+				title: message,
+				icon: 'none'
+			})
+		})
+	}
+
+	function finishSave (): void {
+		saving.value = false
+		uni.hideLoading()
+	}
+
+	function goBack (): void {
+		if (saving.value) {
+			return
+		}
+		uni.navigateBack()
+	}
+</script>
+
+<style lang="scss">
+	.page {
+		display: flex;
+		flex-direction: column;
+		height: 100vh;
+		background: #F7F8FA;
+	}
+
+	.safe-nav {
+		background: #FFFFFF;
+	}
+
+	.nav-row {
+		height: 44px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 16px;
+		padding-right: 16px;
+	}
+
+	.back-button {
+		width: 32px;
+		height: 32px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 16px;
+		background: #F3F4F6;
+		flex-shrink: 0;
+	}
+
+	.back-glyph {
+		margin-top: -3px;
+		font-size: 28px;
+		line-height: 28px;
+		color: #1A1D24;
+	}
+
+	.nav-title {
+		flex: 1;
+		text-align: center;
+		font-size: 17px;
+		font-weight: 600;
+		color: #1A1D24;
+	}
+
+	.nav-placeholder {
+		width: 32px;
+		height: 32px;
+		flex-shrink: 0;
+	}
+
+	.content-scroll {
+		flex: 1;
+	}
+
+	.content-inner {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+		padding: 16px;
+	}
+
+	.form-card {
+		padding: 16px;
+		background: #FFFFFF;
+		border: 1px solid #EEF0F3;
+		border-radius: 16px;
+		box-shadow: 0 4px 16px rgba(23, 26, 36, 0.04);
+	}
+
+	.field-head {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.field-title {
+		font-size: 15px;
+		font-weight: 700;
+		color: #1A1D24;
+	}
+
+	.field-description {
+		font-size: 13px;
+		line-height: 20px;
+		color: #9CA3AF;
+	}
+
+	.field-textarea {
+		width: 100%;
+		height: 120px;
+		margin-top: 12px;
+		padding: 12px;
+		box-sizing: border-box;
+		background: #F9FAFB;
+		border: 1px solid #EEF0F3;
+		border-radius: 10px;
+		font-size: 15px;
+		line-height: 22px;
+		color: #1A1D24;
+	}
+
+	.field-placeholder {
+		color: #C4C9D0;
+	}
+
+	.field-count {
+		display: block;
+		margin-top: 6px;
+		text-align: right;
+		font-size: 12px;
+		color: #9CA3AF;
+	}
+
+	.media-grid {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-top: 14px;
+	}
+
+	.media-item,
+	.media-add {
+		width: 92px;
+		height: 92px;
+		border-radius: 10px;
+		overflow: hidden;
+		position: relative;
+		flex-shrink: 0;
+	}
+
+	.media-item {
+		background: #F3F4F6;
+	}
+
+	.media-content {
+		width: 92px;
+		height: 92px;
+	}
+
+	.media-video {
+		width: 92px;
+		height: 92px;
+	}
+
+	.media-video-placeholder {
+		width: 92px;
+		height: 92px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 4px;
+		background: #E5E7EB;
+	}
+
+	.media-video-glyph {
+		font-size: 22px;
+		line-height: 22px;
+		color: #4B5563;
+	}
+
+	.media-video-text {
+		font-size: 12px;
+		color: #4B5563;
+	}
+
+	.media-mask {
+		position: absolute;
+		left: 0;
+		top: 0;
+		width: 92px;
+		height: 92px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: rgba(17, 24, 39, 0.55);
+	}
+
+	.media-mask-failed {
+		background: rgba(190, 24, 24, 0.68);
+	}
+
+	.media-mask-text {
+		font-size: 12px;
+		color: #FFFFFF;
+	}
+
+	.media-delete {
+		position: absolute;
+		right: 4px;
+		top: 4px;
+		width: 22px;
+		height: 22px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 11px;
+		background: rgba(17, 24, 39, 0.72);
+	}
+
+	.media-delete-text {
+		margin-top: -1px;
+		font-size: 18px;
+		line-height: 18px;
+		color: #FFFFFF;
+	}
+
+	.media-add {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 2px;
+		background: #F9FAFB;
+		border: 1px dashed #D1D5DB;
+		box-sizing: border-box;
+	}
+
+	.media-add-glyph {
+		font-size: 26px;
+		line-height: 26px;
+		color: #9CA3AF;
+	}
+
+	.media-add-text {
+		font-size: 12px;
+		color: #9CA3AF;
+	}
+
+	.media-count {
+		display: block;
+		margin-top: 8px;
+		text-align: right;
+		font-size: 12px;
+		color: #9CA3AF;
+	}
+
+	.footer {
+		padding: 12px 16px 24px;
+		background: #FFFFFF;
+		border-top: 1px solid #F0F1F3;
+	}
+
+	.save-button {
+		width: 100%;
+		height: 48px;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background-image: linear-gradient(135deg, #FF8A3D 0%, #FF5224 100%);
+		border: none;
+		border-radius: 12px;
+		line-height: normal;
+	}
+
+	.save-button::after {
+		border: none;
+	}
+
+	.save-button-disabled {
+		opacity: 0.55;
+	}
+
+	.save-button-text {
+		font-size: 16px;
+		font-weight: 600;
+		color: #FFFFFF;
+	}
+</style>

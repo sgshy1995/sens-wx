@@ -50,6 +50,22 @@
 			}
 		},
 		{
+			"path": "pages/profile/profile",
+			"style": {
+				"navigationBarTitleText": "个人资料",
+				"navigationStyle": "custom",
+				"backgroundColor": "#F7F8FA"
+			}
+		},
+		{
+			"path": "pages/pain-record/pain-record",
+			"style": {
+				"navigationBarTitleText": "伤痛档案维护",
+				"navigationStyle": "custom",
+				"backgroundColor": "#F7F8FA"
+			}
+		},
+		{
 			"path": "pages/login-guide/login-guide",
 			"style": {
 				"navigationBarTitleText": "登录",

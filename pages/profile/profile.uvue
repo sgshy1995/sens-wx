@@ -1,0 +1,668 @@
+<template>
+	<view class="page">
+		<view class="safe-nav" :style="{ paddingTop: statusBarHeight + 'px' }">
+			<view class="nav-row">
+				<view class="back-button" @click="goBack">
+					<text class="back-glyph">‹</text>
+				</view>
+				<text class="nav-title">个人资料</text>
+				<view class="nav-placeholder"></view>
+			</view>
+		</view>
+
+		<scroll-view class="content-scroll" scroll-y>
+			<view class="content-inner">
+				<view class="profile-card">
+					<view class="avatar-section">
+						<image v-if="avatarUrl.length > 0" class="avatar" :src="avatarUrl" mode="aspectFill"></image>
+						<image v-else class="avatar" src="/static/icons/ic-avatar.svg" mode="aspectFit"></image>
+						<view class="avatar-copy">
+							<text class="avatar-name">{{ userName }}</text>
+							<text class="avatar-subtitle">{{ phoneText }}</text>
+						</view>
+						<button
+							class="avatar-action"
+							open-type="chooseAvatar"
+							hover-class="none"
+							@chooseavatar="onChooseAvatar"
+						>
+							<text class="avatar-action-text">修改头像</text>
+							<image class="chevron-icon" src="/static/icons/ic-chevron.svg" mode="aspectFit"></image>
+						</button>
+					</view>
+				</view>
+
+				<view class="form-card">
+					<view class="field-row">
+						<text class="field-label">昵称</text>
+						<input
+							class="nickname-input"
+							type="text"
+							maxlength="8"
+							:value="nickname"
+							placeholder="请输入昵称"
+							placeholder-class="age-placeholder"
+							@input="onNicknameInput"
+						/>
+					</view>
+
+					<view class="divider"></view>
+
+					<view class="field-row">
+						<text class="field-label">手机号</text>
+						<text class="field-readonly">{{ phoneText }}</text>
+					</view>
+
+					<view class="divider"></view>
+
+					<picker class="field-picker" mode="selector" :range="genderOptions" :value="genderIndex" @change="onGenderChange">
+						<view class="field-row">
+							<text class="field-label">性别</text>
+							<view class="field-value-wrap">
+								<text class="field-value" :class="{ 'field-placeholder': genderIndex === 0 }">{{ genderText() }}</text>
+								<image class="chevron-icon" src="/static/icons/ic-chevron.svg" mode="aspectFit"></image>
+							</view>
+						</view>
+					</picker>
+
+					<view class="divider"></view>
+
+					<view class="field-row">
+						<text class="field-label">年龄</text>
+						<input
+							class="age-input"
+							type="number"
+							maxlength="3"
+							:value="ageText"
+							placeholder="请输入年龄"
+							placeholder-class="age-placeholder"
+							@input="onAgeInput"
+						/>
+						<text class="field-unit">岁</text>
+					</view>
+				</view>
+			</view>
+		</scroll-view>
+
+		<view class="footer">
+			<button class="save-button" :class="{ 'save-button-disabled': saving }" :disabled="saving" hover-class="none" @click="handleSave">
+				<text class="save-button-text">{{ saving ? '保存中...' : '保存' }}</text>
+			</button>
+		</view>
+
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { fetchCurrentUser, fetchCurrentUserInfo, hasLocalToken } from '../../common/auth'
+	import { API_BASE_URL } from '../../common/config'
+	import { resolveFileUrl } from '../../common/forum'
+	import { buildUploadHeader, put } from '../../common/request'
+
+	const statusBarHeight = ref(24)
+	const saving = ref(false)
+	const uploadingAvatar = ref(false)
+	const userName = ref('微信用户')
+	const phoneText = ref('未绑定')
+	const nickname = ref('')
+	const avatarUrl = ref('')
+	const genderOptions = ref<string[]>(['未设置', '女', '男'])
+	const genderIndex = ref(0)
+	const ageText = ref('')
+
+	onLoad(() => {
+		const sys = uni.getSystemInfoSync()
+		statusBarHeight.value = sys.statusBarHeight
+		if (!hasLocalToken()) {
+			uni.navigateTo({
+				url: '/pages/login-guide/login-guide'
+			})
+			return
+		}
+		loadProfile()
+	})
+
+	function loadProfile (): void {
+		fetchCurrentUser((user) => {
+			updateUserView(user)
+			fetchCurrentUserInfo((userInfo) => {
+				const age = userInfo.getNumber('age', 0)
+				ageText.value = age > 0 ? age.toString() : ''
+			}, () => {})
+		}, (message) => {
+			uni.showToast({
+				title: message,
+				icon: 'none'
+			})
+		})
+	}
+
+	function updateUserView (user: UTSJSONObject): void {
+		const name = user.getString('name') ?? ''
+		const phone = user.getString('phone') ?? ''
+		const avatar = user.getString('avatar') ?? ''
+		const gender = user.getNumber('gender', -1)
+		const displayName = name.length > 0 ? name : buildDefaultNickname(phone)
+
+		userName.value = displayName
+		phoneText.value = phone.length > 0 ? phone : '未绑定'
+		nickname.value = displayName
+		avatarUrl.value = avatar.length > 0 ? resolveFileUrl(avatar) : ''
+		genderIndex.value = gender === 0 ? 1 : (gender === 1 ? 2 : 0)
+	}
+
+	function buildDefaultNickname (phone: string): string {
+		const suffix = phone.length >= 4 ? phone.substring(phone.length - 4) : phone
+		return '微信用户' + suffix
+	}
+
+	function onNicknameInput (event: UniEvent): void {
+		nickname.value = event.detail.value as string
+	}
+
+	function onChooseAvatar (event: UniEvent): void {
+		const avatarTempUrl = event.detail.avatarUrl as string
+		if (avatarTempUrl.length === 0) {
+			uni.showToast({
+				title: '未获取到微信头像',
+				icon: 'none'
+			})
+			return
+		}
+		uploadAvatar(avatarTempUrl)
+	}
+
+	function uploadAvatar (filePath: string): void {
+		if (uploadingAvatar.value) {
+			return
+		}
+		uploadingAvatar.value = true
+		uni.showLoading({
+			title: '上传中',
+			mask: true
+		})
+		wx.uploadFile({
+			url: API_BASE_URL + '/user/upload_avatar',
+			filePath: filePath,
+			name: 'file',
+			header: buildUploadHeader(),
+			success: (res) => {
+				let data: UTSJSONObject | null = null
+				try {
+					data = JSON.parse(res.data) as UTSJSONObject
+				} catch (error) {
+					data = null
+				}
+				if (data == null || data.getNumber('code', 0) !== 200) {
+					finishAvatarUpload()
+					uni.showToast({
+						title: data == null ? '上传失败' : (data.getString('message') ?? '上传失败'),
+						icon: 'none'
+					})
+					return
+				}
+				fetchCurrentUser((user) => {
+					updateUserView(user)
+					finishAvatarUpload()
+					uni.showToast({
+						title: '头像已更新',
+						icon: 'success'
+					})
+				}, (message) => {
+					finishAvatarUpload()
+					uni.showToast({
+						title: message,
+						icon: 'none'
+					})
+				})
+			},
+			fail: () => {
+				finishAvatarUpload()
+				uni.showToast({
+					title: '上传失败，请稍后重试',
+					icon: 'none'
+				})
+			}
+		})
+	}
+
+	function finishAvatarUpload (): void {
+		uploadingAvatar.value = false
+		uni.hideLoading()
+	}
+
+	function genderText (): string {
+		if (genderIndex.value === 1) {
+			return '女'
+		}
+		if (genderIndex.value === 2) {
+			return '男'
+		}
+		return '请选择'
+	}
+
+	function onGenderChange (event: UniEvent): void {
+		const index = Number(event.detail.value)
+		genderIndex.value = index >= 0 && index < genderOptions.value.length ? index : 0
+	}
+
+	function onAgeInput (event: UniEvent): void {
+		const raw = event.detail.value as string
+		ageText.value = normalizeAge(raw)
+	}
+
+	function normalizeAge (value: string): string {
+		let digits = ''
+		for (let i = 0; i < value.length; i++) {
+			const char = value.charAt(i)
+			if (char >= '0' && char <= '9') {
+				digits += char
+			}
+		}
+		if (digits.length === 0) {
+			return ''
+		}
+		const age = Number(digits)
+		if (age > 100) {
+			return '100'
+		}
+		return age.toString()
+	}
+
+	function validateForm (): string {
+		if (nickname.value.trim().length === 0) {
+			return '请输入昵称'
+		}
+		if (nickname.value.trim().length > 8) {
+			return '昵称最多8个字符'
+		}
+		if (genderIndex.value === 0) {
+			return '请选择性别'
+		}
+		const age = Number(ageText.value)
+		if (ageText.value.length === 0 || age < 1 || age > 100) {
+			return '请输入1-100岁之间的年龄'
+		}
+		return ''
+	}
+
+	function handleSave (): void {
+		if (saving.value || uploadingAvatar.value) {
+			return
+		}
+		const message = validateForm()
+		if (message.length > 0) {
+			uni.showToast({
+				title: message,
+				icon: 'none'
+			})
+			return
+		}
+
+		saving.value = true
+		uni.showLoading({
+			title: '保存中',
+			mask: true
+		})
+
+		saveNickname()
+	}
+
+	function saveNickname (): void {
+		const userData = new UTSJSONObject()
+		userData.set('name', nickname.value.trim())
+		const requestData = new UTSJSONObject()
+		requestData.set('user', userData)
+
+		put('/user/jwt', requestData, (res) => {
+			const code = res.getNumber('code', 0)
+			if (code !== 200) {
+				finishSave()
+				uni.showToast({
+					title: res.getString('message') ?? '保存失败',
+					icon: 'none'
+				})
+				return
+			}
+			saveGender()
+		}, (message) => {
+			finishSave()
+			uni.showToast({
+				title: message,
+				icon: 'none'
+			})
+		})
+	}
+
+	function saveGender (): void {
+		const userData = new UTSJSONObject()
+		userData.set('gender', genderIndex.value - 1)
+		const requestData = new UTSJSONObject()
+		requestData.set('user', userData)
+
+		put('/user/jwt', requestData, (res) => {
+			const code = res.getNumber('code', 0)
+			if (code !== 200) {
+				finishSave()
+				uni.showToast({
+					title: res.getString('message') ?? '保存失败',
+					icon: 'none'
+				})
+				return
+			}
+			saveAge()
+		}, (message) => {
+			finishSave()
+			uni.showToast({
+				title: message,
+				icon: 'none'
+			})
+		})
+	}
+
+	function saveAge (): void {
+		const requestData = new UTSJSONObject()
+		requestData.set('age', Number(ageText.value))
+		put('/user_info/jwt', requestData, (res) => {
+			const code = res.getNumber('code', 0)
+			if (code !== 200) {
+				finishSave()
+				uni.showToast({
+					title: res.getString('message') ?? '保存失败',
+					icon: 'none'
+				})
+				return
+			}
+			fetchCurrentUser((user) => {
+				updateUserView(user)
+			}, () => {})
+			fetchCurrentUserInfo(() => {}, () => {})
+			finishSave()
+			uni.showToast({
+				title: '保存成功',
+				icon: 'success'
+			})
+			setTimeout(() => {
+				uni.navigateBack()
+			}, 600)
+		}, (message) => {
+			finishSave()
+			uni.showToast({
+				title: message,
+				icon: 'none'
+			})
+		})
+	}
+
+	function finishSave (): void {
+		saving.value = false
+		uni.hideLoading()
+	}
+
+	function goBack (): void {
+		if (saving.value || uploadingAvatar.value) {
+			return
+		}
+		uni.navigateBack()
+	}
+</script>
+
+<style lang="scss">
+	.page {
+		display: flex;
+		flex-direction: column;
+		height: 100vh;
+		background: #F7F8FA;
+	}
+
+	.safe-nav {
+		background: #FFFFFF;
+	}
+
+	.nav-row {
+		height: 44px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 16px;
+		padding-right: 16px;
+	}
+
+	.back-button {
+		width: 32px;
+		height: 32px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 16px;
+		background: #F3F4F6;
+		flex-shrink: 0;
+	}
+
+	.back-glyph {
+		margin-top: -3px;
+		font-size: 28px;
+		line-height: 28px;
+		color: #1A1D24;
+	}
+
+	.nav-title {
+		flex: 1;
+		text-align: center;
+		font-size: 17px;
+		font-weight: 600;
+		color: #1A1D24;
+	}
+
+	.nav-placeholder {
+		width: 32px;
+		height: 32px;
+		flex-shrink: 0;
+	}
+
+	.content-scroll {
+		flex: 1;
+	}
+
+	.content-inner {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+		padding: 16px;
+	}
+
+	.profile-card {
+		padding: 20px 16px;
+		background: #FFFFFF;
+		border: 1px solid #EEF0F3;
+		border-radius: 16px;
+		box-shadow: 0 4px 16px rgba(23, 26, 36, 0.04);
+	}
+
+	.avatar-section {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 14px;
+	}
+
+	.avatar {
+		width: 64px;
+		height: 64px;
+		border-radius: 32px;
+		flex-shrink: 0;
+	}
+
+	.avatar-copy {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.avatar-name {
+		font-size: 18px;
+		font-weight: 700;
+		color: #1A1D24;
+	}
+
+	.avatar-subtitle {
+		font-size: 13px;
+		color: #9CA3AF;
+	}
+
+	.avatar-action {
+		width: auto;
+		min-height: 0;
+		margin: 0;
+		padding: 8px 0 8px 8px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 2px;
+		flex-shrink: 0;
+		box-sizing: border-box;
+		background: transparent;
+		border: none;
+		border-radius: 0;
+		line-height: normal;
+		text-align: left;
+		overflow: visible;
+	}
+
+	.avatar-action::after {
+		border: none;
+	}
+
+	.avatar-action-text {
+		font-size: 13px;
+		color: #FF6B35;
+	}
+
+	.form-card {
+		background: #FFFFFF;
+		border: 1px solid #EEF0F3;
+		border-radius: 16px;
+		box-shadow: 0 4px 16px rgba(23, 26, 36, 0.04);
+		overflow: hidden;
+	}
+
+	.field-row {
+		min-height: 56px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding: 0 16px;
+		box-sizing: border-box;
+	}
+
+	.field-label {
+		width: 76px;
+		font-size: 15px;
+		font-weight: 500;
+		color: #1A1D24;
+		flex-shrink: 0;
+	}
+
+	.field-readonly {
+		flex: 1;
+		text-align: right;
+		font-size: 15px;
+		color: #6B7280;
+	}
+
+	.field-picker {
+		width: 100%;
+	}
+
+	.field-value-wrap {
+		flex: 1;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: flex-end;
+		gap: 6px;
+	}
+
+	.field-value {
+		font-size: 15px;
+		color: #1A1D24;
+	}
+
+	.field-placeholder {
+		color: #C4C9D0;
+	}
+
+	.chevron-icon {
+		width: 16px;
+		height: 16px;
+		flex-shrink: 0;
+	}
+
+	.age-input {
+		flex: 1;
+		height: 56px;
+		text-align: right;
+		font-size: 15px;
+		color: #1A1D24;
+	}
+
+	.nickname-input {
+		flex: 1;
+		height: 56px;
+		text-align: right;
+		font-size: 15px;
+		color: #1A1D24;
+	}
+
+	.age-placeholder {
+		color: #C4C9D0;
+	}
+
+	.field-unit {
+		margin-left: 4px;
+		font-size: 15px;
+		color: #6B7280;
+	}
+
+	.divider {
+		height: 1px;
+		margin-left: 16px;
+		background: #F3F4F6;
+	}
+
+	.footer {
+		padding: 12px 16px 24px;
+		background: #FFFFFF;
+		border-top: 1px solid #F0F1F3;
+	}
+
+	.save-button {
+		width: 100%;
+		height: 48px;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background-image: linear-gradient(135deg, #FF8A3D 0%, #FF5224 100%);
+		border: none;
+		border-radius: 12px;
+		line-height: normal;
+	}
+
+	.save-button::after {
+		border: none;
+	}
+
+	.save-button-disabled {
+		opacity: 0.55;
+	}
+
+	.save-button-text {
+		font-size: 16px;
+		font-weight: 600;
+		color: #FFFFFF;
+	}
+
+</style>

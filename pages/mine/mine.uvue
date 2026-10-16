@@ -93,7 +93,7 @@
 					class="tap-button menu-row"
 					hover-class="none"
 					:open-type="canTriggerPhoneLogin() ? 'getPhoneNumber' : ''"
-					@click="handleLoginTap"
+					@click="goProfile"
 					@getphonenumber="onGetPhoneNumber"
 				>
 					<image class="menu-icon" src="/static/icons/ic-personal-data.svg" mode="aspectFit"></image>
@@ -106,12 +106,12 @@
 					class="tap-button menu-row"
 					hover-class="none"
 					:open-type="canTriggerPhoneLogin() ? 'getPhoneNumber' : ''"
-					@click="handleLoginTap"
+					@click="goPainRecord"
 					@getphonenumber="onGetPhoneNumber"
 				>
 					<image class="menu-icon" src="/static/icons/ic-pain-data.svg" mode="aspectFit"></image>
 					<text class="menu-title">伤痛档案</text>
-					<text v-if="loggedIn" class="menu-extra">{{ painRecordCount }} 条记录</text>
+					<text v-if="loggedIn" class="menu-extra">{{ painRecordStatus }}</text>
 					<image class="chevron-icon" src="/static/icons/ic-chevron.svg" mode="aspectFit"></image>
 				</button>
 				<view class="menu-divider"></view>
@@ -187,7 +187,7 @@
 	const schemeCount = ref(0)
 	const collectCount = ref(0)
 	const likeCount = ref(0)
-	const painRecordCount = ref(0)
+	const painRecordStatus = ref('')
 	const integralText = ref('0')
 	const balanceText = ref('0.00')
 
@@ -219,7 +219,7 @@
 		loggedIn.value = true
 		fetchCurrentUser((user) => {
 			updateUserView(user)
-			loadMineMetrics(user)
+			loadMineMetrics()
 		}, () => {
 			resetAuthenticatedState()
 		})
@@ -230,18 +230,28 @@
 		const phone = user.getString('phone') ?? ''
 		const avatar = user.getString('avatar') ?? ''
 		const createdAt = user.getString('created_at') ?? ''
+		const displayName = name.length > 0 ? name : buildDefaultNickname(phone)
 
-		userName.value = name.length > 0 ? name : (phone.length > 0 ? phone : '微信用户')
+		userName.value = displayName
 		userHint.value = phone.length > 0 ? phone : '已登录'
 		avatarUrl.value = avatar.length > 0 ? resolveFileUrl(avatar) : ''
 		rehabDays.value = calculateRehabDays(createdAt)
 	}
 
-	function loadMineMetrics (user: UTSJSONObject): void {
-		const userId = user.getString('id') ?? ''
+	function buildDefaultNickname (phone: string): string {
+		const suffix = phone.length >= 4 ? phone.substring(phone.length - 4) : phone
+		return '微信用户' + suffix
+	}
+
+	function loadMineMetrics (): void {
 		fetchCurrentUserInfo((userInfo) => {
 			balanceText.value = formatMoney(userInfo.getString('balance') ?? '0', 2)
 			integralText.value = userInfo.getNumber('integral', 0).toString()
+			const injuryHistory = userInfo.getString('injury_history') ?? ''
+			const injuryRecent = userInfo.getString('injury_recent') ?? ''
+			const dischargeAbstract = userInfo.getString('discharge_abstract') ?? ''
+			const imageData = userInfo.getString('image_data') ?? ''
+			painRecordStatus.value = injuryHistory.length > 0 || injuryRecent.length > 0 || dischargeAbstract.length > 0 || imageData.length > 0 ? '已维护' : '未维护'
 		}, () => {})
 
 		get('/patient_course', (res) => {
@@ -268,16 +278,6 @@
 			collectCount.value = data == null ? 0 : data.getNumber('count', 0)
 		}, () => {})
 
-		if (userId.length === 0) {
-			return
-		}
-		get('/pain_question/custom?pageNo=1&pageSize=1&user_id=' + userId, (res) => {
-			if (res.getNumber('code', 0) !== 200) {
-				return
-			}
-			const data = res.getJSON('data')
-			painRecordCount.value = data == null ? 0 : data.getNumber('totalCount', 0)
-		}, () => {})
 	}
 
 	function resetAuthenticatedState (): void {
@@ -289,7 +289,7 @@
 		schemeCount.value = 0
 		collectCount.value = 0
 		likeCount.value = 0
-		painRecordCount.value = 0
+		painRecordStatus.value = ''
 		integralText.value = '0'
 		balanceText.value = '0.00'
 	}
@@ -301,6 +301,26 @@
 	function goRecharge (): void {
 		uni.navigateTo({
 			url: '/pages/recharge/recharge'
+		})
+	}
+
+	function goProfile (): void {
+		if (!loggedIn.value) {
+			handleLoginTap()
+			return
+		}
+		uni.navigateTo({
+			url: '/pages/profile/profile'
+		})
+	}
+
+	function goPainRecord (): void {
+		if (!loggedIn.value) {
+			handleLoginTap()
+			return
+		}
+		uni.navigateTo({
+			url: '/pages/pain-record/pain-record'
 		})
 	}
 

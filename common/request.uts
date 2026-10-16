@@ -10,6 +10,15 @@ export function buildHeader (): UTSJSONObject {
 	return header
 }
 
+export function buildUploadHeader (): UTSJSONObject {
+	const header = new UTSJSONObject()
+	const token = uni.getStorageSync('token') as string | null
+	if (token != null && token.length > 0) {
+		header.set('Authorization', 'Bearer ' + token)
+	}
+	return header
+}
+
 export function get (
 	url: string,
 	success: (data: UTSJSONObject) => void,
