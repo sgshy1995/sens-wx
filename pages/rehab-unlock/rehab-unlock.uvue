@@ -1,0 +1,439 @@
+<template>
+	<view class="page">
+		<view class="hero">
+			<view class="safe-nav" :style="{ paddingTop: statusBarHeight + 'px' }">
+				<view class="nav-row">
+					<view class="back-button" @click="goBack">
+						<text class="back-glyph">‹</text>
+					</view>
+					<text class="nav-title">订单确认</text>
+					<view class="nav-placeholder"></view>
+				</view>
+			</view>
+
+			<view class="product-summary">
+				<text class="product-title">{{ courseTitle }}</text>
+				<text class="product-description">{{ stageTitle }} · 完整阶段安排 · 动作图文详解 · 视频跟练</text>
+				<view class="price-row">
+					<text class="price-current">¥{{ priceText() }}</text>
+					<text v-if="showOriginalPrice()" class="price-original">¥{{ originalPriceText() }}</text>
+				</view>
+			</view>
+		</view>
+
+		<view class="content">
+			<view class="payment-card">
+				<text class="card-title">选择支付方式</text>
+				<view class="payment-row" @click="selectPayment(0)">
+					<image class="payment-icon" src="/static/icons/ic-balance-pay.svg" mode="aspectFit"></image>
+					<view class="payment-copy">
+						<text class="payment-name">余额支付</text>
+						<text class="payment-desc">可用余额 ¥{{ balanceText() }}</text>
+					</view>
+					<view class="radio" :class="{ 'radio-active': paymentType === 0 }">
+						<view v-if="paymentType === 0" class="radio-dot"></view>
+					</view>
+				</view>
+				<view class="divider"></view>
+				<view class="payment-row" @click="selectPayment(1)">
+					<image class="payment-icon" src="/static/icons/ic-wechat-pay.svg" mode="aspectFit"></image>
+					<view class="payment-copy">
+						<text class="payment-name">微信支付</text>
+						<text class="payment-desc">使用微信快捷支付</text>
+					</view>
+					<view class="radio" :class="{ 'radio-active': paymentType === 1 }">
+						<view v-if="paymentType === 1" class="radio-dot"></view>
+					</view>
+				</view>
+			</view>
+			<text class="agreement-tip">支付即同意《康复方案解锁服务协议》，解锁后永久有效</text>
+		</view>
+
+		<view class="footer">
+			<view class="total-group">
+				<text class="total-label">合计</text>
+				<text class="total-amount">¥{{ priceText() }}</text>
+			</view>
+			<button class="pay-button" :disabled="paying || loading" hover-class="none" @click="handlePay">
+				<text class="pay-button-text">{{ paying ? '支付中...' : '立即支付' }}</text>
+			</button>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { formatMoney } from '../../common/money'
+	import { get, post } from '../../common/request'
+
+	const statusBarHeight = ref(24)
+	const courseId = ref('')
+	const stageId = ref('')
+	const courseTitle = ref('康复方案')
+	const stageTitle = ref('')
+	const price = ref('0')
+	const originalPrice = ref('0')
+	const balance = ref('0')
+	const paymentType = ref(0)
+	const loading = ref(true)
+	const paying = ref(false)
+
+	onLoad((options) => {
+		const sys = uni.getSystemInfoSync()
+		statusBarHeight.value = sys.statusBarHeight
+		const courseIdOption = options['courseId']
+		if (courseIdOption != null) {
+			courseId.value = courseIdOption as string
+		}
+		const stageIdOption = options['stageId']
+		if (stageIdOption != null) {
+			stageId.value = stageIdOption as string
+		}
+		loadUnlockInfo()
+	})
+
+	function loadUnlockInfo (): void {
+		if (courseId.value.length === 0 || stageId.value.length === 0) {
+			uni.showToast({ title: '缺少课程参数', icon: 'none' })
+			return
+		}
+		const url = '/rehab_combination_course/unlock/info?course_id=' + encodeURIComponent(courseId.value)
+			+ '&stage_id=' + encodeURIComponent(stageId.value)
+		get(url, (res) => {
+			loading.value = false
+			if (res.getNumber('code', 0) !== 200) {
+				uni.showToast({ title: res.getString('message') ?? '加载失败', icon: 'none' })
+				return
+			}
+			const data = res.getJSON('data')
+			if (data == null) {
+				return
+			}
+			courseTitle.value = data.getString('course_title') ?? courseTitle.value
+			stageTitle.value = data.getString('stage_title') ?? ''
+			price.value = data.getString('price') ?? '0'
+			originalPrice.value = data.getString('original_price') ?? '0'
+			balance.value = data.getString('balance') ?? '0'
+			if (data.getBoolean('unlocked') === true) {
+				uni.showToast({ title: '该阶段已解锁', icon: 'none' })
+			}
+		}, (msg) => {
+			loading.value = false
+			uni.showToast({ title: msg, icon: 'none' })
+		})
+	}
+
+	function selectPayment (type: number): void {
+		if (!paying.value) {
+			paymentType.value = type
+		}
+	}
+
+	function priceText (): string {
+		return formatMoney(price.value, 2)
+	}
+
+	function originalPriceText (): string {
+		return formatMoney(originalPrice.value, 2)
+	}
+
+	function balanceText (): string {
+		return formatMoney(balance.value, 2)
+	}
+
+	function showOriginalPrice (): boolean {
+		return Number(originalPrice.value) > Number(price.value)
+	}
+
+	function handlePay (): void {
+		if (paying.value || loading.value) {
+			return
+		}
+		if (paymentType.value === 0 && Number(balance.value) < Number(price.value)) {
+			uni.showToast({ title: '余额不足，请先充值或选择微信支付', icon: 'none' })
+			return
+		}
+		paying.value = true
+		uni.showLoading({ title: '支付中', mask: true })
+		const body = new UTSJSONObject()
+		body.set('course_id', courseId.value)
+		body.set('stage_id', stageId.value)
+		body.set('payment_type', paymentType.value)
+		post('/rehab_combination_course/unlock', body, (res) => {
+			finishPay()
+			if (res.getNumber('code', 0) !== 200) {
+				uni.showToast({ title: res.getString('message') ?? '支付失败', icon: 'none' })
+				return
+			}
+			const data = res.getJSON('data')
+			if (data == null) {
+				uni.showToast({ title: '支付结果异常', icon: 'none' })
+				return
+			}
+			const amount = data.getString('price') ?? price.value
+			const orderNo = data.getString('order_no') ?? ''
+			const paymentTime = data.getString('payment_time') ?? ''
+			const paymentTypeText = data.getString('payment_type_text') ?? '余额支付'
+			const resultCourseTitle = data.getString('course_title') ?? courseTitle.value
+			const resultStageTitle = data.getString('stage_title') ?? stageTitle.value
+			uni.redirectTo({
+				url: '/pages/rehab-unlock-success/rehab-unlock-success'
+					+ '?amount=' + encodeURIComponent(amount)
+					+ '&orderNo=' + encodeURIComponent(orderNo)
+					+ '&time=' + encodeURIComponent(paymentTime)
+					+ '&paymentTypeText=' + encodeURIComponent(paymentTypeText)
+					+ '&courseTitle=' + encodeURIComponent(resultCourseTitle)
+					+ '&stageTitle=' + encodeURIComponent(resultStageTitle)
+			})
+		}, (msg) => {
+			finishPay()
+			uni.showToast({ title: msg, icon: 'none' })
+		})
+	}
+
+	function finishPay (): void {
+		paying.value = false
+		uni.hideLoading()
+	}
+
+	function goBack (): void {
+		if (!paying.value) {
+			uni.navigateBack()
+		}
+	}
+</script>
+
+<style lang="scss">
+	.page {
+		display: flex;
+		flex-direction: column;
+		height: 100vh;
+		background: #F7F8FA;
+	}
+
+	.hero {
+		background-image: linear-gradient(142deg, #FF8A43 0%, #FA4D1A 100%);
+	}
+
+	.safe-nav {
+		width: 100%;
+	}
+
+	.nav-row {
+		height: 44px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding: 0 16px;
+		box-sizing: border-box;
+	}
+
+	.back-button {
+		width: 32px;
+		height: 32px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 16px;
+		background: rgba(255, 255, 255, 0.22);
+	}
+
+	.back-glyph {
+		margin-top: -3px;
+		font-size: 28px;
+		line-height: 28px;
+		color: #FFFFFF;
+	}
+
+	.nav-title {
+		flex: 1;
+		text-align: center;
+		font-size: 17px;
+		font-weight: 600;
+		color: #FFFFFF;
+	}
+
+	.nav-placeholder {
+		width: 32px;
+		height: 32px;
+	}
+
+	.product-summary {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		padding: 20px 16px 28px;
+	}
+
+	.product-title {
+		font-size: 20px;
+		font-weight: 700;
+		line-height: 28px;
+		color: #FFFFFF;
+	}
+
+	.product-description {
+		font-size: 12px;
+		line-height: 18px;
+		color: rgba(255, 255, 255, 0.78);
+	}
+
+	.price-row {
+		display: flex;
+		flex-direction: row;
+		align-items: baseline;
+		gap: 8px;
+	}
+
+	.price-current {
+		font-size: 28px;
+		font-weight: 700;
+		color: #FFFFFF;
+	}
+
+	.price-original {
+		font-size: 12px;
+		color: rgba(255, 255, 255, 0.62);
+		text-decoration: line-through;
+	}
+
+	.content {
+		flex: 1;
+		padding: 16px;
+		box-sizing: border-box;
+	}
+
+	.payment-card {
+		padding: 16px;
+		border-radius: 14px;
+		background: #FFFFFF;
+		box-shadow: 0 4px 16px rgba(23, 26, 36, 0.04);
+	}
+
+	.card-title {
+		display: block;
+		margin-bottom: 10px;
+		font-size: 14px;
+		font-weight: 600;
+		color: #1A1D24;
+	}
+
+	.payment-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 12px;
+		padding: 12px 0;
+	}
+
+	.payment-icon {
+		width: 32px;
+		height: 32px;
+		flex-shrink: 0;
+	}
+
+	.payment-copy {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.payment-name {
+		font-size: 14px;
+		font-weight: 500;
+		color: #1A1D24;
+	}
+
+	.payment-desc {
+		font-size: 11px;
+		color: #9CA3AF;
+	}
+
+	.radio {
+		width: 20px;
+		height: 20px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border: 1px solid #D1D5DB;
+		border-radius: 10px;
+		box-sizing: border-box;
+	}
+
+	.radio-active {
+		border-color: #FF6B35;
+	}
+
+	.radio-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 4px;
+		background: #FF6B35;
+	}
+
+	.divider {
+		width: 100%;
+		height: 1px;
+		background: #F1F2F5;
+	}
+
+	.agreement-tip {
+		display: block;
+		margin-top: 14px;
+		text-align: center;
+		font-size: 11px;
+		line-height: 16px;
+		color: #9CA3AF;
+	}
+
+	.footer {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 12px;
+		padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+		background: #FFFFFF;
+		box-shadow: 0 -4px 16px rgba(23, 26, 36, 0.06);
+	}
+
+	.total-group {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		min-width: 90px;
+	}
+
+	.total-label {
+		font-size: 11px;
+		color: #9CA3AF;
+	}
+
+	.total-amount {
+		font-size: 20px;
+		font-weight: 700;
+		color: #FF6B35;
+	}
+
+	.pay-button {
+		flex: 1;
+		height: 46px;
+		margin: 0;
+		border-radius: 23px;
+		background-color: #FF6B35;
+		background-image: linear-gradient(135deg, #FF8A3D 0%, #FF5124 100%);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		line-height: 1;
+	}
+
+	.pay-button::after {
+		border: none;
+	}
+
+	.pay-button-text {
+		font-size: 15px;
+		font-weight: 600;
+		color: #FFFFFF;
+	}
+</style>

@@ -3,6 +3,7 @@ import dayjs from 'dayjs'
 export class RehabChatStage {
 	id: string = ""
 	title: string = ""
+	remark: string = ""
 	sort: number = 0
 	price: string = "0"
 	discountPrice: string = ""
@@ -18,6 +19,10 @@ export class RehabChatStage {
 		const title = json.getString("title")
 		if (title != null) {
 			this.title = title
+		}
+		const remark = json.getString("remark")
+		if (remark != null) {
+			this.remark = remark
 		}
 		const sort = json.getNumber("sort")
 		if (sort != null) {
@@ -48,15 +53,19 @@ export class RehabChatStage {
 
 export class RehabChatCourse {
 	id: string = ""
+	stageId: string = ""
 	title: string = ""
 	remark: string = ""
 	tagName: string = ""
 	stageDictionaryName: string = ""
 	stageTitle: string = ""
 	stageIndexText: string = ""
+	stageRemark: string = ""
 	unlockPrice: string = "0"
 	unlockButtonText: string = "立即解锁"
 	dictionaryText: string = ""
+	unlocked: boolean = false
+	stages: RehabChatStageInfo[] = []
 
 	initFromJSON (json: UTSJSONObject): void {
 		const id = json.getString("id")
@@ -87,6 +96,10 @@ export class RehabChatCourse {
 		if (unlockButtonText != null) {
 			this.unlockButtonText = unlockButtonText
 		}
+		const unlocked = json.getBoolean("unlocked")
+		if (unlocked != null) {
+			this.unlocked = unlocked
+		}
 		const items = json.getArray<UTSJSONObject>("dictionary_items")
 		if (items != null) {
 			let text = ""
@@ -105,16 +118,50 @@ export class RehabChatCourse {
 		if (stageJson != null) {
 			const stage = new RehabChatStage()
 			stage.initFromJSON(stageJson)
+			this.stageId = stage.id
 			this.stageTitle = stage.title
+			this.stageRemark = stage.remark
 			this.unlockPrice = stage.unlockPrice
-			if (stage.totalStageCount > 0) {
-				this.stageIndexText = "第 " + (stage.sort + 1).toString() + " / " + stage.totalStageCount.toString() + " 阶段"
-			} else {
-				this.stageIndexText = stage.dictionaryItemName
-			}
+			this.stageIndexText = stage.dictionaryItemName
 			if (this.unlockPrice.length > 0) {
 				this.unlockButtonText = "¥" + this.unlockPrice + " 立即解锁"
 			}
+		}
+		const stagesJson = json.getArray<UTSJSONObject>("stages")
+		if (stagesJson != null) {
+			const parsedStages: RehabChatStageInfo[] = []
+			for (let i = 0; i < stagesJson.length; i++) {
+				const stageInfo = new RehabChatStageInfo()
+				stageInfo.initFromJSON(stagesJson[i])
+				parsedStages.push(stageInfo)
+			}
+			this.stages = parsedStages
+		}
+	}
+}
+
+export class RehabChatStageInfo {
+	id: string = ""
+	title: string = ""
+	dictionaryItemName: string = ""
+	isCurrent: boolean = false
+
+	initFromJSON (json: UTSJSONObject): void {
+		const id = json.getString("id")
+		if (id != null) {
+			this.id = id
+		}
+		const title = json.getString("title")
+		if (title != null) {
+			this.title = title
+		}
+		const dictionaryItemName = json.getString("dictionary_item_name")
+		if (dictionaryItemName != null) {
+			this.dictionaryItemName = dictionaryItemName
+		}
+		const isCurrent = json.getBoolean("is_current")
+		if (isCurrent != null) {
+			this.isCurrent = isCurrent
 		}
 	}
 }

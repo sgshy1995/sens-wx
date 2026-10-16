@@ -38,7 +38,7 @@
 
 				<view v-if="messages.length === 0 && !initialLoading && !sending" class="message-row">
 					<view class="ai-avatar">
-						<image class="ai-avatar-icon" src="/static/icons/ic-star-tip.svg" mode="aspectFit"></image>
+						<image class="ai-avatar-icon" src="/static/icons/ic-bot-avatar.svg" mode="aspectFit"></image>
 					</view>
 					<view class="message-bubble ai-bubble">
 						<text class="message-text">说说你的伤痛或康复目标，我来帮你</text>
@@ -66,7 +66,7 @@
 
 				<view v-for="(item, index) in messages" v-show="item.visible" :key="item.id + '-' + index" class="message-row" :class="{ 'message-row-user': item.role === 'user' }">
 					<view v-if="item.role === 'assistant'" class="ai-avatar">
-						<image class="ai-avatar-icon" src="/static/icons/ic-star-tip.svg" mode="aspectFit"></image>
+						<image class="ai-avatar-icon" src="/static/icons/ic-bot-avatar.svg" mode="aspectFit"></image>
 					</view>
 					<view class="message-bubble" :class="item.role === 'user' ? 'user-bubble' : 'ai-bubble'">
 						<text class="message-text" :class="{ 'user-message-text': item.role === 'user' }">{{ item.content }}</text>
@@ -78,17 +78,33 @@
 								</view>
 								<text class="course-title">{{ item.course.title }}</text>
 								<text v-if="item.course.dictionaryText.length > 0" class="course-dictionary">{{ item.course.dictionaryText }}</text>
-								<text v-if="item.course.stageIndexText.length > 0" class="course-stage-text">{{ item.course.stageIndexText }}</text>
 							</view>
-							<view class="unlock-mask">
+							<view v-if="!item.course.unlocked" class="unlock-mask">
 								<view class="lock-badge">
 									<view class="lock-ring"></view>
 									<view class="lock-body"><view class="lock-hole"></view></view>
 								</view>
 								<text class="unlock-title">解锁查看完整康复方案</text>
 								<text class="unlock-subtitle">完整阶段安排 · 动作图文详解 · 视频跟练</text>
-								<view class="unlock-button" @click="onUnlockTap">
+								<view class="unlock-button" @click="onUnlockTap(item.course)">
 									<text class="unlock-button-text">{{ item.course.unlockButtonText }}</text>
+								</view>
+							</view>
+							<view v-else class="unlocked-body">
+								<view class="unlocked-current-stage">
+									<text class="unlocked-current-kicker">本次解锁阶段</text>
+									<text class="unlocked-current-title">{{ item.course.stageTitle }}</text>
+									<text v-if="item.course.stageIndexText.length > 0" class="unlocked-current-meta">{{ item.course.stageIndexText }}</text>
+									<text v-if="item.course.stageRemark.length > 0" class="unlocked-current-remark">{{ item.course.stageRemark }}</text>
+								</view>
+								<view class="unlocked-actions">
+									<view class="unlocked-action unlocked-action-light" @click="onContactCoachTap">
+										<image class="unlocked-action-icon" src="/static/icons/ic-phone.svg" mode="aspectFit"></image>
+										<text class="unlocked-action-text">联系康复师</text>
+									</view>
+									<view class="unlocked-action unlocked-action-primary" @click="onViewCourseTap">
+										<text class="unlocked-action-text unlocked-action-text-primary">查看完整方案</text>
+									</view>
 								</view>
 							</view>
 						</view>
@@ -100,7 +116,7 @@
 
 				<view v-if="sending && waitingFirstToken" class="message-row">
 					<view class="ai-avatar">
-						<image class="ai-avatar-icon" src="/static/icons/ic-star-tip.svg" mode="aspectFit"></image>
+						<image class="ai-avatar-icon" src="/static/icons/ic-bot-avatar.svg" mode="aspectFit"></image>
 					</view>
 					<view class="message-bubble ai-bubble thinking-bubble">
 						<text class="thinking-text">正在分析你的康复需求</text>
@@ -178,7 +194,7 @@
 
 <script setup lang="uts">
 	import { hasLocalToken } from '../../common/auth'
-	import { RehabChatMessage, RehabChatTopic } from '../../common/rehab-chat'
+	import { RehabChatCourse, RehabChatMessage, RehabChatTopic } from '../../common/rehab-chat'
 	import { del, get, post, postStream } from '../../common/request'
 
 	const statusBarHeight = ref(24)
@@ -211,11 +227,19 @@
 	onLoad(() => {
 		const sys = uni.getSystemInfoSync()
 		statusBarHeight.value = sys.statusBarHeight
-		loadLatestSession()
 	})
 
 	onShow(() => {
-		if (hasLocalToken() && messages.value.length === 0 && sessionId.value.length === 0) {
+		if (!hasLocalToken()) {
+			initialLoading.value = false
+			return
+		}
+		if (sending.value) {
+			return
+		}
+		if (sessionId.value.length > 0) {
+			loadTopicMessages(sessionId.value)
+		} else {
 			loadLatestSession()
 		}
 	})
@@ -743,9 +767,23 @@
 		})
 	}
 
-	function onUnlockTap (): void {
+	function onUnlockTap (course: RehabChatCourse): void {
+		uni.navigateTo({
+			url: '/pages/rehab-unlock/rehab-unlock?courseId=' + encodeURIComponent(course.id)
+				+ '&stageId=' + encodeURIComponent(course.stageId)
+		})
+	}
+
+	function onContactCoachTap (): void {
 		uni.showToast({
-			title: '解锁能力将后续接入',
+			title: '请联系客服微信或拨打线下康复电话',
+			icon: 'none'
+		})
+	}
+
+	function onViewCourseTap (): void {
+		uni.showToast({
+			title: '完整方案查看功能后续接入',
 			icon: 'none'
 		})
 	}
@@ -1017,13 +1055,12 @@
 		align-items: center;
 		justify-content: center;
 		border-radius: 16px;
-		background-color: #FF6B35;
-		background-image: linear-gradient(135deg, #FF8A3D 0%, #FF5124 100%);
+		background: transparent;
 	}
 
 	.ai-avatar-icon {
-		width: 18px;
-		height: 18px;
+		width: 32px;
+		height: 32px;
 	}
 
 	.user-avatar {
@@ -1238,6 +1275,144 @@
 	.unlock-button-text {
 		font-size: 14px;
 		font-weight: 600;
+		color: #FFFFFF;
+	}
+
+	.unlocked-body {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		padding: 12px;
+		box-sizing: border-box;
+		background: #FFFFFF;
+		border-top: 1px solid #EDEFF2;
+	}
+
+	.unlocked-current-stage {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		padding: 12px;
+		border-radius: 10px;
+		background: #FFF5EF;
+	}
+
+	.unlocked-current-kicker {
+		font-size: 10px;
+		line-height: 14px;
+		color: #FF6B35;
+	}
+
+	.unlocked-current-title {
+		font-size: 14px;
+		font-weight: 700;
+		line-height: 20px;
+		color: #1A1D24;
+	}
+
+	.unlocked-current-meta {
+		font-size: 11px;
+		line-height: 16px;
+		color: #6B7280;
+	}
+
+	.unlocked-current-remark {
+		margin-top: 2px;
+		font-size: 11px;
+		line-height: 17px;
+		color: #9CA3AF;
+	}
+
+	.unlocked-stage-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 8px;
+		padding: 8px;
+		border-radius: 9px;
+		background: #F7F8FA;
+	}
+
+	.unlocked-stage-row-current {
+		background: #FFF5EF;
+	}
+
+	.unlocked-stage-dot {
+		width: 8px;
+		height: 8px;
+		flex-shrink: 0;
+		border-radius: 4px;
+		background: #D1D5DB;
+	}
+
+	.unlocked-stage-dot-current {
+		background: #FF6B35;
+	}
+
+	.unlocked-stage-copy {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		min-width: 0;
+	}
+
+	.unlocked-stage-title {
+		font-size: 12px;
+		font-weight: 600;
+		line-height: 17px;
+		color: #1A1D24;
+	}
+
+	.unlocked-stage-meta {
+		font-size: 10px;
+		line-height: 14px;
+		color: #9CA3AF;
+	}
+
+	.unlocked-stage-label {
+		font-size: 10px;
+		font-weight: 500;
+		color: #FF6B35;
+	}
+
+	.unlocked-actions {
+		display: flex;
+		flex-direction: row;
+		gap: 8px;
+	}
+
+	.unlocked-action {
+		flex: 1;
+		height: 36px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+		gap: 4px;
+		border-radius: 10px;
+	}
+
+	.unlocked-action-light {
+		background: #F7F8FA;
+	}
+
+	.unlocked-action-primary {
+		background: #FF6B35;
+	}
+
+	.unlocked-action-icon {
+		width: 14px;
+		height: 14px;
+	}
+
+	.unlocked-action-text {
+		font-size: 12px;
+		font-weight: 500;
+		color: #4B5563;
+	}
+
+	.unlocked-action-text-primary {
 		color: #FFFFFF;
 	}
 
