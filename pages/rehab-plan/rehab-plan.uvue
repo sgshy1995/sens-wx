@@ -1,0 +1,1037 @@
+<template>
+	<view class="page">
+		<scroll-view class="page-scroll" scroll-y>
+			<view class="hero">
+				<view class="safe-nav" :style="{ paddingTop: statusBarHeight + 'px' }">
+					<view class="nav-row">
+						<view class="back-button" @click="goBack">
+							<text class="back-glyph">‹</text>
+						</view>
+						<text class="nav-title">康复方案</text>
+						<view class="nav-placeholder"></view>
+					</view>
+				</view>
+				<view class="hero-copy">
+					<text class="hero-title">{{ planTitle }}</text>
+					<text class="hero-subtitle">{{ heroSubtitle() }}</text>
+				</view>
+			</view>
+
+			<view class="body">
+				<view v-if="loading" class="state-card"><text class="state-text">正在加载方案...</text></view>
+				<view v-else-if="loadFailed" class="state-card"><text class="state-text">{{ failMessage }}</text></view>
+				<template v-else>
+					<view class="section-head">
+						<text class="section-title">方案概览</text>
+						<text v-if="planTag.length > 0" class="section-note">{{ planTag }}</text>
+					</view>
+					<view class="overview-card">
+						<view class="overview-stats">
+							<view class="overview-stat">
+								<text class="overview-value">{{ totalCount }}</text>
+								<text class="overview-label">训练内容</text>
+							</view>
+							<view class="overview-stat">
+								<text class="overview-value">{{ videoCount }}</text>
+								<text class="overview-label">视频跟练</text>
+							</view>
+							<view class="overview-stat">
+								<text class="overview-value">{{ mediaCount }}</text>
+								<text class="overview-label">图文详解</text>
+							</view>
+						</view>
+					</view>
+
+					<view v-if="hasFirstVideo" class="section-head">
+						<text class="section-title">重点跟练</text>
+						<text class="section-note">视频</text>
+					</view>
+					<view v-if="hasFirstVideo" class="feature-card" @click="playFirstVideo">
+						<image class="feature-cover" :src="firstVideoCover" mode="aspectFill"></image>
+						<view class="feature-mask"></view>
+						<view class="feature-play"><view class="feature-play-triangle"></view></view>
+						<view class="feature-copy">
+							<text class="feature-title">{{ firstVideoTitle }}</text>
+							<text v-if="firstVideoRemark.length > 0" class="feature-subtitle">{{ firstVideoRemark }}</text>
+						</view>
+					</view>
+
+					<view class="section-head">
+						<text class="section-title">训练内容安排</text>
+						<text class="section-note">{{ totalCount }} 项内容</text>
+					</view>
+					<view v-if="totalCount === 0" class="state-card"><text class="state-text">该阶段暂未配置内容</text></view>
+					<view v-for="(section, index) in sections" :key="section.id + '-' + index" class="module-card">
+						<view class="module-head">
+							<view class="module-head-left">
+								<view class="module-index"><text class="module-index-text">{{ formatIndex(index) }}</text></view>
+								<text class="module-name">{{ sectionTitle(section) }}</text>
+							</view>
+							<view class="module-type"><text class="module-type-text">{{ sectionTypeLabel(section) }}</text></view>
+						</view>
+						<view class="module-divider"></view>
+						<view v-if="isVideoSection(section) || isImageSection(section)" class="entry-cover-wrap" @click="onSectionTap(section)">
+							<image class="entry-cover" :src="sectionCoverUrl(section)" mode="aspectFill"></image>
+							<view v-if="isVideoSection(section)" class="entry-play"><view class="entry-play-triangle"></view></view>
+						</view>
+						<text v-else class="entry-paragraph">{{ section.resourceContent }}</text>
+						<text v-if="sectionExtra(section).length > 0" class="entry-extra">{{ sectionExtra(section) }}</text>
+					</view>
+
+					<view v-if="planRemark.length > 0" class="tips-card">
+						<view class="tips-head">
+							<view class="tips-dot"></view>
+							<text class="tips-title">康复小贴士</text>
+						</view>
+						<text class="tips-text">{{ planRemark }}</text>
+					</view>
+				</template>
+			</view>
+			<view class="bottom-space"></view>
+		</scroll-view>
+
+		<view class="footer">
+			<view class="contact-button" :class="{ 'contact-button-narrow': hasNextStage }" @click="onContactCoachTap">
+				<text class="contact-text">联系康复师</text>
+			</view>
+			<view v-if="hasNextStage" class="start-button" @click="onStartNextStage">
+				<text class="start-text">开始下阶段训练</text>
+			</view>
+		</view>
+
+		<view v-if="previewVisible" class="preview-mask">
+			<view class="preview-top" :style="{ paddingTop: topPadding + 'px' }">
+				<view class="preview-close" @click="closePreview">
+					<text class="preview-close-glyph">×</text>
+				</view>
+				<text class="preview-counter">{{ previewCounter() }}</text>
+				<view class="preview-top-placeholder"></view>
+			</view>
+
+			<view class="preview-stage">
+				<video
+					v-if="previewType === 'video'"
+					class="preview-media"
+					:src="previewUrl"
+					:poster="previewCover"
+					controls
+					autoplay
+					object-fit="contain"
+				></video>
+				<image v-else class="preview-media" :src="previewUrl" mode="aspectFit"></image>
+			</view>
+
+			<view v-if="previewItems.length > 1" class="preview-nav">
+				<view class="preview-arrow" @click="previewPrev">
+					<text class="preview-arrow-glyph">‹</text>
+				</view>
+				<view class="preview-arrow" @click="previewNext">
+					<text class="preview-arrow-glyph">›</text>
+				</view>
+			</view>
+
+			<view v-if="previewTitle.length > 0 || previewRemark.length > 0" class="preview-caption">
+				<text v-if="previewTitle.length > 0" class="preview-title">{{ previewTitle }}</text>
+				<text v-if="previewRemark.length > 0" class="preview-remark">{{ previewRemark }}</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { RehabPlanDetail, RehabPlanSection, RehabMediaItem } from '../../common/rehab-plan'
+	import { resolveFileUrl } from '../../common/forum'
+	import { get } from '../../common/request'
+
+	const statusBarHeight = ref(24)
+	const topPadding = ref(32)
+	const stageId = ref('')
+	const courseId = ref('')
+	const courseTitle = ref('')
+	const planTitle = ref('康复方案')
+	const planTag = ref('')
+	const planRemark = ref('')
+	const sections = ref<RehabPlanSection[]>([])
+	const loading = ref(true)
+	const loadFailed = ref(false)
+	const failMessage = ref('')
+	const totalCount = ref(0)
+	const videoCount = ref(0)
+	const mediaCount = ref(0)
+	const hasFirstVideo = ref(false)
+	const firstVideoTitle = ref('')
+	const firstVideoCover = ref('')
+	const firstVideoRemark = ref('')
+	const hasNextStage = ref(false)
+	const nextStageId = ref('')
+	const checkingNextStage = ref(false)
+	const previewVisible = ref(false)
+	const previewItems = ref<RehabMediaItem[]>([])
+	const previewIndex = ref(0)
+	const previewType = ref('')
+	const previewUrl = ref('')
+	const previewCover = ref('')
+	const previewTitle = ref('')
+	const previewRemark = ref('')
+
+	onLoad((options) => {
+		const sys = uni.getSystemInfoSync()
+		statusBarHeight.value = sys.statusBarHeight
+		topPadding.value = sys.statusBarHeight + 8
+		const stageIdOption = options['stageId']
+		if (stageIdOption != null) {
+			stageId.value = stageIdOption as string
+		}
+		const titleOption = options['courseTitle']
+		if (titleOption != null) {
+			courseTitle.value = decodeOption(titleOption as string)
+		}
+		loadPlan()
+	})
+
+	function decodeOption (value: string): string {
+		try {
+			return decodeURIComponent(value)
+		} catch (error) {
+			return value
+		}
+	}
+
+	function loadPlan (): void {
+		if (stageId.value.length === 0) {
+			loading.value = false
+			loadFailed.value = true
+			failMessage.value = '缺少方案参数'
+			return
+		}
+		const url = '/rehab_combination_course_stage/id/' + encodeURIComponent(stageId.value)
+		get(url, (res) => {
+			loading.value = false
+			if (res.getNumber('code', 0) !== 200) {
+				loadFailed.value = true
+				failMessage.value = res.getString('message') ?? '方案加载失败'
+				return
+			}
+			const data = res.getJSON('data')
+			if (data == null) {
+				loadFailed.value = true
+				failMessage.value = '方案内容为空'
+				return
+			}
+			const detail = new RehabPlanDetail()
+			detail.initFromJSON(data)
+			applyDetail(detail)
+		}, (msg) => {
+			loading.value = false
+			loadFailed.value = true
+			failMessage.value = msg
+		})
+	}
+
+	function applyDetail (detail: RehabPlanDetail): void {
+		planTitle.value = detail.title.length > 0 ? detail.title : '康复方案'
+		planTag.value = detail.dictionaryItemName
+		planRemark.value = detail.remark
+		courseId.value = detail.courseId
+		sections.value = detail.sections
+		totalCount.value = detail.sections.length
+		videoCount.value = detail.videoCount()
+		mediaCount.value = detail.mediaCount()
+		buildPreviewItems(detail)
+		const video = detail.firstVideo()
+		if (video != null) {
+			hasFirstVideo.value = true
+			firstVideoTitle.value = video.resourceTitle.length > 0 ? video.resourceTitle : '重点跟练'
+			firstVideoCover.value = video.resourceCover.length > 0 ? resolveFileUrl(video.resourceCover) : ''
+			firstVideoRemark.value = video.extraTextValue()
+		}
+		loadNextStage(detail.courseId, detail.sort)
+	}
+
+	function loadNextStage (courseIdValue: string, currentSort: number): void {
+		if (courseIdValue.length === 0) {
+			return
+		}
+		const url = '/rehab_combination_course/id/' + encodeURIComponent(courseIdValue)
+		get(url, (res) => {
+			if (res.getNumber('code', 0) !== 200) {
+				return
+			}
+			const data = res.getJSON('data')
+			if (data == null) {
+				return
+			}
+			const stages = data.getArray<UTSJSONObject>('stages')
+			if (stages == null) {
+				return
+			}
+			let matchedId = ''
+			let matchedSort = -1
+			for (let i = 0; i < stages.length; i++) {
+				const item = stages[i]
+				const sort = item.getNumber('sort') ?? -1
+				const status = item.getNumber('status') ?? 1
+				if (status === 1 && sort > currentSort) {
+					if (matchedSort < 0 || sort < matchedSort) {
+						matchedSort = sort
+						matchedId = item.getString('id') ?? ''
+					}
+				}
+			}
+			if (matchedId.length > 0) {
+				hasNextStage.value = true
+				nextStageId.value = matchedId
+			}
+		}, (msg) => {
+		})
+	}
+
+	function heroSubtitle (): string {
+		const parts: string[] = []
+		if (courseTitle.value.length > 0) {
+			parts.push(courseTitle.value)
+		}
+		if (planTag.value.length > 0) {
+			parts.push(planTag.value)
+		}
+		if (parts.length === 0) {
+			return '完整康复方案'
+		}
+		let text = ''
+		for (let i = 0; i < parts.length; i++) {
+			if (i > 0) {
+				text += ' · '
+			}
+			text += parts[i]
+		}
+		return text
+	}
+
+	function formatIndex (index: number): string {
+		const value = index + 1
+		return value < 10 ? '0' + value.toString() : value.toString()
+	}
+
+	function sectionTitle (section: RehabPlanSection): string {
+		return section.resourceTitle.length > 0 ? section.resourceTitle : '康复内容'
+	}
+
+	function sectionTypeLabel (section: RehabPlanSection): string {
+		return section.typeLabel()
+	}
+
+	function isVideoSection (section: RehabPlanSection): boolean {
+		return section.isVideo()
+	}
+
+	function isImageSection (section: RehabPlanSection): boolean {
+		return section.isImage()
+	}
+
+	function sectionCoverUrl (section: RehabPlanSection): string {
+		if (section.resourceCover.length > 0) {
+			return resolveFileUrl(section.resourceCover)
+		}
+		if (section.isImage()) {
+			return resolveFileUrl(section.resourceContent)
+		}
+		return ''
+	}
+
+	function sectionExtra (section: RehabPlanSection): string {
+		return section.extraTextValue()
+	}
+
+	function buildPreviewItems (detail: RehabPlanDetail): void {
+		const items: RehabMediaItem[] = []
+		for (let i = 0; i < detail.sections.length; i++) {
+			const section = detail.sections[i]
+			if (section.isVideo() || section.isImage()) {
+				const item = new RehabMediaItem()
+				item.type = section.isVideo() ? 'video' : 'image'
+				item.url = resolveFileUrl(section.resourceContent)
+				item.cover = section.resourceCover.length > 0 ? resolveFileUrl(section.resourceCover) : ''
+				item.title = section.resourceTitle
+				item.remark = section.extraTextValue()
+				items.push(item)
+			}
+		}
+		previewItems.value = items
+	}
+
+	function findPreviewIndex (section: RehabPlanSection): number {
+		const target = resolveFileUrl(section.resourceContent)
+		for (let i = 0; i < previewItems.value.length; i++) {
+			if (previewItems.value[i].url === target) {
+				return i
+			}
+		}
+		return -1
+	}
+
+	function syncPreviewCurrent (): void {
+		if (previewIndex.value < 0 || previewIndex.value >= previewItems.value.length) {
+			return
+		}
+		const item = previewItems.value[previewIndex.value]
+		previewType.value = item.type
+		previewUrl.value = item.url
+		previewCover.value = item.cover
+		previewTitle.value = item.title
+		previewRemark.value = item.remark
+	}
+
+	function openPreviewAt (index: number): void {
+		if (index < 0 || index >= previewItems.value.length) {
+			return
+		}
+		previewIndex.value = index
+		syncPreviewCurrent()
+		previewVisible.value = true
+	}
+
+	function previewPrev (): void {
+		if (previewItems.value.length <= 1) {
+			return
+		}
+		const target = previewIndex.value > 0 ? previewIndex.value - 1 : previewItems.value.length - 1
+		openPreviewAt(target)
+	}
+
+	function previewNext (): void {
+		if (previewItems.value.length <= 1) {
+			return
+		}
+		const target = previewIndex.value < previewItems.value.length - 1 ? previewIndex.value + 1 : 0
+		openPreviewAt(target)
+	}
+
+	function closePreview (): void {
+		previewVisible.value = false
+	}
+
+	function previewCounter (): string {
+		return (previewIndex.value + 1).toString() + ' / ' + previewItems.value.length.toString()
+	}
+
+	function playFirstVideo (): void {
+		for (let i = 0; i < previewItems.value.length; i++) {
+			if (previewItems.value[i].type === 'video') {
+				openPreviewAt(i)
+				return
+			}
+		}
+	}
+
+	function onSectionTap (section: RehabPlanSection): void {
+		openPreviewAt(findPreviewIndex(section))
+	}
+
+	function onContactCoachTap (): void {
+		uni.showToast({
+			title: '请联系客服微信或拨打线下康复电话',
+			icon: 'none'
+		})
+	}
+
+	function onStartNextStage (): void {
+		if (checkingNextStage.value || nextStageId.value.length === 0 || courseId.value.length === 0) {
+			return
+		}
+		checkingNextStage.value = true
+		uni.showLoading({
+			title: '加载中',
+			mask: true
+		})
+		const url = '/rehab_combination_course/unlock/info?course_id=' + encodeURIComponent(courseId.value)
+			+ '&stage_id=' + encodeURIComponent(nextStageId.value)
+		get(url, (res) => {
+			finishNextStageCheck()
+			if (res.getNumber('code', 0) !== 200) {
+				uni.showToast({
+					title: res.getString('message') ?? '加载失败',
+					icon: 'none'
+				})
+				return
+			}
+			const data = res.getJSON('data')
+			if (data != null && data.getBoolean('unlocked') === true) {
+				uni.navigateTo({
+					url: '/pages/rehab-plan/rehab-plan?stageId=' + encodeURIComponent(nextStageId.value)
+						+ '&courseTitle=' + encodeURIComponent(courseTitle.value)
+				})
+				return
+			}
+			uni.navigateTo({
+				url: '/pages/rehab-unlock/rehab-unlock?courseId=' + encodeURIComponent(courseId.value)
+					+ '&stageId=' + encodeURIComponent(nextStageId.value)
+			})
+		}, (msg) => {
+			finishNextStageCheck()
+			uni.showToast({
+				title: msg,
+				icon: 'none'
+			})
+		})
+	}
+
+	function finishNextStageCheck (): void {
+		checkingNextStage.value = false
+		uni.hideLoading()
+	}
+
+	function goBack (): void {
+		uni.navigateBack()
+	}
+</script>
+
+<style lang="scss">
+	.page {
+		display: flex;
+		flex-direction: column;
+		height: 100vh;
+		background: #F7F8FA;
+	}
+
+	.page-scroll {
+		flex: 1;
+		height: 0;
+	}
+
+	.hero {
+		padding: 0 20px 22px;
+		background-image: linear-gradient(135deg, #FF8A3D 0%, #FF5124 100%);
+	}
+
+	.safe-nav {
+		width: 100%;
+	}
+
+	.nav-row {
+		height: 44px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.back-button {
+		width: 32px;
+		height: 32px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 16px;
+		background: rgba(255, 255, 255, 0.22);
+	}
+
+	.back-glyph {
+		margin-top: -3px;
+		font-size: 28px;
+		line-height: 28px;
+		color: #FFFFFF;
+	}
+
+	.nav-title {
+		flex: 1;
+		text-align: center;
+		font-size: 17px;
+		font-weight: 600;
+		color: #FFFFFF;
+	}
+
+	.nav-placeholder {
+		width: 32px;
+		height: 32px;
+	}
+
+	.hero-copy {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		margin-top: 6px;
+	}
+
+	.hero-title {
+		font-size: 22px;
+		font-weight: 700;
+		line-height: 30px;
+		color: #FFFFFF;
+	}
+
+	.hero-subtitle {
+		font-size: 12px;
+		line-height: 18px;
+		color: rgba(255, 255, 255, 0.85);
+	}
+
+	.body {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+		padding: 18px 16px 0;
+	}
+
+	.section-head {
+		display: flex;
+		flex-direction: row;
+		align-items: baseline;
+		justify-content: space-between;
+	}
+
+	.section-title {
+		font-size: 16px;
+		font-weight: 700;
+		color: #1A1D24;
+	}
+
+	.section-note {
+		font-size: 11px;
+		color: #9CA3AF;
+	}
+
+	.state-card {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 40px 0;
+		border-radius: 16px;
+		background: #FFFFFF;
+	}
+
+	.state-text {
+		font-size: 13px;
+		color: #9CA3AF;
+	}
+
+	.overview-card {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		padding: 14px;
+		border-radius: 16px;
+		background: #FFFFFF;
+		border: 1px solid #EDEFF2;
+		box-shadow: 0 4px 16px rgba(23, 26, 36, 0.04);
+	}
+
+	.overview-stats {
+		display: flex;
+		flex-direction: row;
+	}
+
+	.overview-stat {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 3px;
+	}
+
+	.overview-value {
+		font-size: 18px;
+		font-weight: 700;
+		color: #1A1D24;
+	}
+
+	.overview-label {
+		font-size: 11px;
+		color: #9CA3AF;
+	}
+
+	.feature-card {
+		position: relative;
+		width: 100%;
+		height: 150px;
+		border-radius: 16px;
+		overflow: hidden;
+	}
+
+	.feature-cover {
+		width: 100%;
+		height: 150px;
+	}
+
+	.feature-mask {
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: 0;
+		bottom: 0;
+		background-image: linear-gradient(180deg, rgba(0, 0, 0, 0) 40%, rgba(0, 0, 0, 0.55) 100%);
+	}
+
+	.feature-play {
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		width: 44px;
+		height: 44px;
+		margin-left: -22px;
+		margin-top: -22px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 22px;
+		background: rgba(255, 255, 255, 0.95);
+		box-shadow: 0 4px 10px rgba(0, 0, 0, 0.18);
+	}
+
+	.feature-play-triangle {
+		width: 0;
+		height: 0;
+		margin-left: 3px;
+		border-top: 7px solid transparent;
+		border-bottom: 7px solid transparent;
+		border-left: 12px solid #FF6B35;
+	}
+
+	.feature-copy {
+		position: absolute;
+		left: 16px;
+		right: 16px;
+		bottom: 14px;
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+	}
+
+	.feature-title {
+		font-size: 15px;
+		font-weight: 600;
+		color: #FFFFFF;
+	}
+
+	.feature-subtitle {
+		font-size: 11px;
+		color: rgba(255, 255, 255, 0.85);
+	}
+
+	.module-card {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		padding: 12px;
+		border-radius: 16px;
+		background: #FFFFFF;
+		border: 1px solid #EDEFF2;
+		box-shadow: 0 4px 16px rgba(23, 26, 36, 0.04);
+	}
+
+	.module-head {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+	}
+
+	.module-head-left {
+		flex: 1;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 8px;
+		min-width: 0;
+	}
+
+	.module-index {
+		width: 24px;
+		height: 24px;
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 8px;
+		background: #FFF3EC;
+	}
+
+	.module-index-text {
+		font-size: 11px;
+		font-weight: 600;
+		color: #FF6B35;
+	}
+
+	.module-name {
+		flex: 1;
+		font-size: 14px;
+		font-weight: 600;
+		color: #1A1D24;
+	}
+
+	.module-type {
+		flex-shrink: 0;
+		padding: 3px 8px;
+		border-radius: 999px;
+		background: #FFF3EC;
+	}
+
+	.module-type-text {
+		font-size: 10px;
+		font-weight: 500;
+		color: #FF6B35;
+	}
+
+	.module-divider {
+		width: 100%;
+		height: 1px;
+		background: #F3F4F6;
+	}
+
+	.entry-cover-wrap {
+		position: relative;
+		width: 100%;
+		height: 150px;
+		border-radius: 12px;
+		overflow: hidden;
+	}
+
+	.entry-cover {
+		width: 100%;
+		height: 150px;
+	}
+
+	.entry-play {
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		width: 40px;
+		height: 40px;
+		margin-left: -20px;
+		margin-top: -20px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 20px;
+		background: rgba(255, 255, 255, 0.95);
+	}
+
+	.entry-play-triangle {
+		width: 0;
+		height: 0;
+		margin-left: 3px;
+		border-top: 6px solid transparent;
+		border-bottom: 6px solid transparent;
+		border-left: 10px solid #FF6B35;
+	}
+
+	.entry-paragraph {
+		font-size: 12px;
+		line-height: 20px;
+		color: #6B7280;
+	}
+
+	.entry-extra {
+		font-size: 11px;
+		line-height: 18px;
+		color: #9CA3AF;
+	}
+
+	.tips-card {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		padding: 12px 14px;
+		border-radius: 16px;
+		background: #FFF3EC;
+	}
+
+	.tips-head {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.tips-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 4px;
+		background: #FF6B35;
+	}
+
+	.tips-title {
+		font-size: 13px;
+		font-weight: 600;
+		color: #1A1D24;
+	}
+
+	.tips-text {
+		font-size: 12px;
+		line-height: 19px;
+		color: #6B7280;
+	}
+
+	.bottom-space {
+		height: 20px;
+	}
+
+	.footer {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 12px;
+		padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+		background: #FFFFFF;
+		box-shadow: 0 -4px 16px rgba(23, 26, 36, 0.06);
+	}
+
+	.contact-button {
+		height: 44px;
+		flex-grow: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 999px;
+		background: #FFFFFF;
+		border: 1px solid #FF6B35;
+		box-sizing: border-box;
+	}
+
+	.contact-button-narrow {
+		flex-grow: 0;
+		flex-shrink: 0;
+		width: 116px;
+	}
+
+	.contact-text {
+		font-size: 14px;
+		font-weight: 600;
+		color: #FF6B35;
+	}
+
+	.start-button {
+		flex: 1;
+		height: 44px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 999px;
+		background-color: #FF6B35;
+		background-image: linear-gradient(135deg, #FF8A3D 0%, #FF5124 100%);
+		box-shadow: 0 6px 14px rgba(255, 81, 36, 0.30);
+	}
+
+	.start-text {
+		font-size: 14px;
+		font-weight: 600;
+		color: #FFFFFF;
+	}
+
+	.preview-mask {
+		position: fixed;
+		left: 0;
+		right: 0;
+		top: 0;
+		bottom: 0;
+		z-index: 100;
+		display: flex;
+		flex-direction: column;
+		background: rgba(15, 16, 20, 0.94);
+	}
+
+	.preview-top {
+		position: relative;
+		z-index: 2;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		height: 56px;
+		padding-left: 16px;
+		padding-right: 16px;
+		box-sizing: content-box;
+	}
+
+	.preview-close {
+		width: 34px;
+		height: 34px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 17px;
+		background: rgba(255, 255, 255, 0.14);
+	}
+
+	.preview-close-glyph {
+		font-size: 18px;
+		line-height: 18px;
+		color: #FFFFFF;
+	}
+
+	.preview-counter {
+		font-size: 13px;
+		font-weight: 500;
+		color: rgba(255, 255, 255, 0.72);
+	}
+
+	.preview-top-placeholder {
+		width: 34px;
+		height: 34px;
+	}
+
+	.preview-stage {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0 16px;
+		box-sizing: border-box;
+	}
+
+	.preview-media {
+		width: 100%;
+		height: 100%;
+	}
+
+	.preview-nav {
+		position: absolute;
+		left: 12px;
+		right: 12px;
+		top: 50%;
+		margin-top: -22px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.preview-arrow {
+		width: 44px;
+		height: 44px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 22px;
+		background: rgba(255, 255, 255, 0.14);
+	}
+
+	.preview-arrow-glyph {
+		margin-top: -4px;
+		font-size: 30px;
+		line-height: 30px;
+		color: #FFFFFF;
+	}
+
+	.preview-caption {
+		position: relative;
+		z-index: 2;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		padding: 12px 20px calc(16px + env(safe-area-inset-bottom));
+	}
+
+	.preview-title {
+		font-size: 14px;
+		font-weight: 600;
+		color: #FFFFFF;
+		text-align: center;
+	}
+
+	.preview-remark {
+		font-size: 12px;
+		line-height: 18px;
+		color: rgba(255, 255, 255, 0.6);
+		text-align: center;
+	}
+</style>

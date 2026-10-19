@@ -26,6 +26,14 @@
 			}
 		},
 		{
+			"path": "pages/rehab-plan/rehab-plan",
+			"style": {
+				"navigationBarTitleText": "康复方案",
+				"navigationStyle": "custom",
+				"backgroundColor": "#F7F8FA"
+			}
+		},
+		{
 			"path": "pages/rehab-unlock/rehab-unlock",
 			"style": {
 				"navigationBarTitleText": "订单确认",
