@@ -98,12 +98,12 @@
 									<text v-if="item.course.stageRemark.length > 0" class="unlocked-current-remark">{{ item.course.stageRemark }}</text>
 								</view>
 								<view class="unlocked-actions">
-									<view class="unlocked-action unlocked-action-light" @click="onContactCoachTap">
-										<image class="unlocked-action-icon" src="/static/icons/ic-phone.svg" mode="aspectFit"></image>
+									<view class="unlocked-action unlocked-action-contact" @click="onContactCoachTap">
+										<image class="unlocked-action-icon" src="/static/icons/ic-online-message.svg" mode="aspectFit"></image>
 										<text class="unlocked-action-text">联系康复师</text>
 									</view>
-									<view class="unlocked-action unlocked-action-primary" @click="onViewCourseTap">
-										<text class="unlocked-action-text unlocked-action-text-primary">查看完整方案</text>
+									<view class="unlocked-action unlocked-action-plan" @click="onViewCourseTap">
+										<text class="unlocked-action-text unlocked-action-text-plan">查看完整方案</text>
 									</view>
 								</view>
 							</view>
@@ -1393,11 +1393,11 @@
 		border-radius: 10px;
 	}
 
-	.unlocked-action-light {
-		background: #F7F8FA;
+	.unlocked-action-contact {
+		background: #FFF3EC;
 	}
 
-	.unlocked-action-primary {
+	.unlocked-action-plan {
 		background: #FF6B35;
 	}
 
@@ -1409,10 +1409,10 @@
 	.unlocked-action-text {
 		font-size: 12px;
 		font-weight: 500;
-		color: #4B5563;
+		color: #FF6B35;
 	}
 
-	.unlocked-action-text-primary {
+	.unlocked-action-text-plan {
 		color: #FFFFFF;
 	}
 
