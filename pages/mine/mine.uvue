@@ -88,6 +88,28 @@
 				</button>
 			</view>
 
+			<button
+				class="tap-button plan-entry-card"
+				hover-class="none"
+				:open-type="canTriggerPhoneLogin() ? 'getPhoneNumber' : ''"
+				@click="goMyPlans"
+				@getphonenumber="onGetPhoneNumber"
+			>
+				<view class="plan-entry-icon-wrap">
+					<image class="plan-entry-icon" src="/static/icons/ic-mine-scheme.svg" mode="aspectFit"></image>
+				</view>
+				<view class="plan-entry-copy">
+					<text class="plan-entry-title">我的方案</text>
+					<text class="plan-entry-subtitle">
+						{{ loggedIn ? `已购 ${purchasedPlanCount} 个方案 · 均在有效期内` : '登录后查看已购方案' }}
+					</text>
+				</view>
+				<view class="plan-entry-count">
+					<text class="plan-entry-count-text">共 {{ purchasedPlanCount }} 个</text>
+				</view>
+				<image class="chevron-icon" src="/static/icons/ic-chevron.svg" mode="aspectFit"></image>
+			</button>
+
 			<view class="menu-card">
 				<button
 					class="tap-button menu-row"
@@ -123,19 +145,6 @@
 					@click="handleLoginTap"
 					@getphonenumber="onGetPhoneNumber"
 				>
-					<image class="menu-icon" src="/static/icons/ic-mine-scheme.svg" mode="aspectFit"></image>
-					<text class="menu-title">我的方案</text>
-					<image class="chevron-icon" src="/static/icons/ic-chevron.svg" mode="aspectFit"></image>
-				</button>
-				<view class="menu-divider"></view>
-
-				<button
-					class="tap-button menu-row"
-					hover-class="none"
-					:open-type="canTriggerPhoneLogin() ? 'getPhoneNumber' : ''"
-					@click="handleLoginTap"
-					@getphonenumber="onGetPhoneNumber"
-				>
 					<image class="menu-icon" src="/static/icons/ic-mine-collect.svg" mode="aspectFit"></image>
 					<text class="menu-title">我的收藏</text>
 					<image class="chevron-icon" src="/static/icons/ic-chevron.svg" mode="aspectFit"></image>
@@ -145,25 +154,10 @@
 				<button
 					class="tap-button menu-row"
 					hover-class="none"
-					:open-type="canTriggerPhoneLogin() ? 'getPhoneNumber' : ''"
-					@click="handleLoginTap"
-					@getphonenumber="onGetPhoneNumber"
+					@click="goOnlineConsult"
 				>
 					<image class="menu-icon" src="/static/icons/ic-contact.svg" mode="aspectFit"></image>
-					<text class="menu-title">联系客服</text>
-					<image class="chevron-icon" src="/static/icons/ic-chevron.svg" mode="aspectFit"></image>
-				</button>
-				<view class="menu-divider"></view>
-
-				<button
-					class="tap-button menu-row"
-					hover-class="none"
-					:open-type="canTriggerPhoneLogin() ? 'getPhoneNumber' : ''"
-					@click="handleLoginTap"
-					@getphonenumber="onGetPhoneNumber"
-				>
-					<image class="menu-icon" src="/static/icons/ic-settings.svg" mode="aspectFit"></image>
-					<text class="menu-title">设置</text>
+					<text class="menu-title">在线咨询</text>
 					<image class="chevron-icon" src="/static/icons/ic-chevron.svg" mode="aspectFit"></image>
 				</button>
 			</view>
@@ -185,6 +179,7 @@
 	const avatarUrl = ref('')
 	const rehabDays = ref(1)
 	const schemeCount = ref(0)
+	const purchasedPlanCount = ref(0)
 	const collectCount = ref(0)
 	const likeCount = ref(0)
 	const painRecordStatus = ref('')
@@ -225,6 +220,22 @@
 		})
 	}
 
+	function goOnlineConsult (): void {
+		uni.navigateTo({
+			url: '/pages/support-chat/support-chat'
+		})
+	}
+
+	function goMyPlans (): void {
+		if (!loggedIn.value) {
+			handleLoginTap()
+			return
+		}
+		uni.navigateTo({
+			url: '/pages/my-plans/my-plans'
+		})
+	}
+
 	function updateUserView (user: UTSJSONObject): void {
 		const name = user.getString('name') ?? ''
 		const phone = user.getString('phone') ?? ''
@@ -262,6 +273,14 @@
 			schemeCount.value = list == null ? 0 : list.length
 		}, () => {})
 
+		get('/rehab_combination_course/unlocks', (res) => {
+			if (res.getNumber('code', 0) !== 200) {
+				return
+			}
+			const data = res.getJSON('data')
+			purchasedPlanCount.value = data == null ? 0 : data.getNumber('total_count', 0)
+		}, () => {})
+
 		get('/forum_like/count', (res) => {
 			if (res.getNumber('code', 0) !== 200) {
 				return
@@ -287,6 +306,7 @@
 		avatarUrl.value = ''
 		rehabDays.value = 1
 		schemeCount.value = 0
+		purchasedPlanCount.value = 0
 		collectCount.value = 0
 		likeCount.value = 0
 		painRecordStatus.value = ''
@@ -595,6 +615,72 @@
 
 	.credit-section {
 		flex: 1;
+	}
+
+	.plan-entry-card {
+		display: flex;
+		min-height: 82px;
+		flex-direction: row;
+		align-items: center;
+		gap: 12px;
+		padding: 14px 16px;
+		box-sizing: border-box;
+		border: 1px solid #EEF0F3;
+		border-radius: 16px;
+		background: #FFFFFF;
+		box-shadow: 0 4px 16px rgba(23, 26, 36, 0.04);
+	}
+
+	.plan-entry-icon-wrap {
+		display: flex;
+		width: 48px;
+		height: 48px;
+		flex: 0 0 48px;
+		align-items: center;
+		justify-content: center;
+		border-radius: 14px;
+		background: #F8F9FB;
+	}
+
+	.plan-entry-icon {
+		width: 37px;
+		height: 37px;
+	}
+
+	.plan-entry-copy {
+		display: flex;
+		min-width: 0;
+		flex: 1;
+		flex-direction: column;
+		gap: 5px;
+	}
+
+	.plan-entry-title {
+		font-size: 16px;
+		font-weight: 600;
+		line-height: 22px;
+		color: #1A1D24;
+	}
+
+	.plan-entry-subtitle {
+		overflow: hidden;
+		font-size: 11px;
+		color: #9CA3AF;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.plan-entry-count {
+		padding: 4px 9px;
+		border: 1px solid #FFB08F;
+		border-radius: 999px;
+		background: #FFF7F2;
+	}
+
+	.plan-entry-count-text {
+		font-size: 10px;
+		font-weight: 500;
+		color: #F05A2A;
 	}
 
 	.account-head {

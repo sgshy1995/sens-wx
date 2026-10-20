@@ -1,0 +1,1515 @@
+<template>
+	<view class="page">
+		<view class="status-space" :style="{ height: statusBarHeight + 'px' }"></view>
+
+		<view class="chat-header">
+			<view class="back-button" @click="goBack">
+				<text class="back-glyph">‹</text>
+			</view>
+			<view class="coach-avatar">
+				<image class="coach-avatar-image" :src="adminAvatar" mode="aspectFill"></image>
+			</view>
+			<view class="coach-copy">
+				<text class="coach-name">{{ adminName }}</text>
+				<view class="coach-status-row">
+					<view class="online-dot"></view>
+					<text class="coach-status">在线</text>
+				</view>
+			</view>
+			<view class="header-placeholder"></view>
+		</view>
+
+		<scroll-view
+			class="message-scroll"
+			scroll-y
+			:scroll-top="scrollTop"
+			:scroll-into-view="scrollIntoView"
+			:upper-threshold="48"
+			@scrolltoupper="loadOlderMessages"
+		>
+			<view class="message-list">
+				<view v-if="initialLoading" class="list-status">
+					<text class="list-status-text">正在加载消息...</text>
+				</view>
+				<view v-else-if="loadingOlder" class="list-status">
+					<text class="list-status-text">正在加载更早消息...</text>
+				</view>
+				<view v-else-if="hasMore" class="list-status">
+					<text class="list-status-text">下拉加载更早消息</text>
+				</view>
+
+				<view v-if="messages.length === 0 && !initialLoading" class="welcome-row">
+					<view class="message-avatar-wrap">
+						<image class="message-avatar" :src="adminAvatar" mode="aspectFill"></image>
+					</view>
+					<view class="welcome-bubble">
+						<text class="welcome-text">
+							您好，我是您的在线康复师。使用程序、日常训练或课程订单遇到问题时，都可以在这里告诉我。
+						</text>
+					</view>
+				</view>
+
+				<view
+					v-for="(item, index) in messages"
+					:key="item.id + '-' + index"
+					class="message-block"
+				>
+					<text v-if="shouldShowTime(index)" class="time-separator">{{ item.timeText }}</text>
+					<view class="message-row" :class="{ 'message-row-user': item.senderRole === 'user' }">
+						<view v-if="item.senderRole !== 'user'" class="message-avatar-wrap">
+							<image class="message-avatar" :src="adminAvatar" mode="aspectFill"></image>
+						</view>
+						<view
+							class="message-bubble"
+							:class="{
+								'user-bubble': item.senderRole === 'user' && item.messageType !== 'course',
+								'coach-bubble': item.senderRole !== 'user',
+								'course-bubble': item.messageType === 'course'
+							}"
+						>
+							<text
+								v-if="item.messageType === 'text'"
+								class="message-text"
+								:class="{ 'user-message-text': item.senderRole === 'user' }"
+							>{{ item.content }}</text>
+
+							<image
+								v-else-if="item.messageType === 'image'"
+								class="image-message"
+								:src="resolveFileUrl(item.mediaUrl)"
+								mode="widthFix"
+								@click="previewImage(item)"
+							></image>
+
+							<view v-else-if="item.messageType === 'video'" class="video-message-wrap">
+								<video
+									class="video-message"
+									:src="resolveFileUrl(item.mediaUrl)"
+									:poster="item.thumbnailUrl.length > 0 ? resolveFileUrl(item.thumbnailUrl) : ''"
+									controls
+									object-fit="contain"
+								></video>
+							</view>
+
+							<view v-else-if="item.messageType === 'course' && item.course != null" class="course-message">
+								<view class="course-kicker-row">
+									<text class="course-kicker">组合课程订单</text>
+									<text class="course-paid">已支付</text>
+								</view>
+								<text class="course-title">{{ courseTitle(item) }}</text>
+								<text class="course-stage">{{ courseStage(item) }}</text>
+								<view class="course-divider"></view>
+								<view class="course-price-block">
+									<text class="course-price">¥{{ coursePrice(item) }}</text>
+									<text class="course-order-no">订单 {{ courseOrderNo(item) }}</text>
+								</view>
+								<view class="course-action" @click="openCourse(item)">
+									<text class="course-action-text">查看完整方案</text>
+								</view>
+							</view>
+
+							<text v-if="item.pending" class="message-state">发送中</text>
+							<text v-if="item.failed" class="message-state message-failed">发送失败</text>
+						</view>
+					</view>
+				</view>
+
+				<view v-if="uploading" class="uploading-row">
+					<view class="uploading-dot"></view>
+					<text class="uploading-text">{{ uploadingLabel }}</text>
+				</view>
+				<view id="support-chat-bottom" class="chat-bottom-space"></view>
+			</view>
+		</scroll-view>
+
+		<view class="composer">
+			<view class="composer-main">
+				<view class="plus-button" :class="{ 'plus-button-open': actionsVisible }" @click="toggleActions">
+					<text class="plus-glyph">+</text>
+				</view>
+				<view class="input-shell">
+					<input
+						class="chat-input"
+						:value="draft"
+						:disabled="sending"
+						placeholder="输入消息…"
+						placeholder-class="chat-input-placeholder"
+						confirm-type="send"
+						maxlength="1000"
+						@input="onDraftInput"
+						@confirm="sendTextMessage"
+					/>
+				</view>
+				<view
+					class="send-button"
+					:class="{ 'send-button-disabled': sending || draft.trim().length === 0 }"
+					@click="sendTextMessage"
+				>
+					<image class="send-image" src="/static/icons/ic-send.svg" mode="aspectFit"></image>
+				</view>
+				<view class="order-button" @click="openOrderSheet">
+					<image class="order-icon" src="/static/icons/ic-order.svg" mode="aspectFit"></image>
+					<text class="order-button-text">订单</text>
+				</view>
+			</view>
+		</view>
+
+		<view v-if="actionsVisible" class="action-mask" @click="closeActions">
+			<view class="action-panel" @click.stop>
+				<view class="action-item" @click="chooseSupportImage(false)">
+					<view class="action-icon-wrap">
+						<image class="action-icon" src="/static/icons/ic-support-image.svg" mode="aspectFit"></image>
+					</view>
+					<text class="action-label">图片</text>
+				</view>
+				<view class="action-item" @click="chooseSupportVideo(false)">
+					<view class="action-icon-wrap">
+						<image class="action-icon" src="/static/icons/ic-support-video.svg" mode="aspectFit"></image>
+					</view>
+					<text class="action-label">视频</text>
+				</view>
+				<view class="action-item" @click="chooseSupportImage(true)">
+					<view class="action-icon-wrap">
+						<image class="action-icon" src="/static/icons/ic-support-camera.svg" mode="aspectFit"></image>
+					</view>
+					<text class="action-label">拍照</text>
+				</view>
+				<view class="action-hint">
+					<text class="action-hint-text">图片 5MB 内 · 视频 30MB 内 · 发送前自动压缩</text>
+				</view>
+			</view>
+		</view>
+
+		<view v-if="orderSheetVisible" class="sheet-mask" @click="closeOrderSheet">
+			<view class="order-sheet" @click.stop>
+				<view class="sheet-header">
+					<view class="sheet-title-wrap">
+						<text class="sheet-title">选择要咨询的订单</text>
+						<text class="sheet-subtitle">仅展示已解锁的组合课程</text>
+					</view>
+					<view class="sheet-close" @click="closeOrderSheet">
+						<text class="sheet-close-text">×</text>
+					</view>
+				</view>
+				<scroll-view class="order-list" scroll-y>
+					<view v-if="loadingCourses" class="sheet-state">
+						<text class="sheet-state-text">正在加载课程订单...</text>
+					</view>
+					<view v-else-if="orderCourses.length === 0" class="sheet-state">
+						<text class="empty-order-title">暂无可咨询的课程订单</text>
+						<text class="empty-order-subtitle">解锁组合课程后，可在这里发送订单卡片</text>
+					</view>
+					<template v-else>
+						<view
+							v-for="course in orderCourses"
+							:key="course.courseId + '-' + course.stageId"
+							class="order-option"
+							:class="{ 'order-option-highlight': course.stageId === highlightStageId }"
+							@click="sendCourseMessage(course)"
+						>
+							<view class="order-option-head">
+								<text class="order-option-title">{{ course.courseTitle }}</text>
+								<text class="order-option-price">¥{{ course.price }}</text>
+							</view>
+							<text class="order-option-stage">{{ course.stageTitle }}</text>
+							<view class="order-option-foot">
+								<text class="order-option-no">订单 {{ course.orderNo }}</text>
+								<text class="order-option-time">{{ course.unlockedText }}</text>
+							</view>
+						</view>
+					</template>
+				</scroll-view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { hasLocalToken } from '../../common/auth'
+	import {
+		shouldShowSupportChatTime,
+		SupportChatCourseOption,
+		SupportChatMessage
+	} from '../../common/support-chat'
+	import { resolveFileUrl } from '../../common/forum'
+	import { get, post } from '../../common/request'
+	import { API_BASE_URL } from '../../common/config'
+	import { buildUploadHeader } from '../../common/request'
+
+	const MAX_IMAGE_SIZE: number = 5 * 1024 * 1024
+	const MAX_VIDEO_SIZE: number = 30 * 1024 * 1024
+
+	const statusBarHeight = ref(24)
+	const adminName = ref('易赴康-康复师')
+	const adminAvatar = ref('/static/icons/ic-help-avatar.png')
+	const messages = ref<SupportChatMessage[]>([])
+	const orderCourses = ref<SupportChatCourseOption[]>([])
+	const draft = ref('')
+	const initialLoading = ref(true)
+	const loadingOlder = ref(false)
+	const sending = ref(false)
+	const uploading = ref(false)
+	const uploadingLabel = ref('正在上传...')
+	const loadingCourses = ref(false)
+	const hasMore = ref(false)
+	const nextBefore = ref('')
+	const scrollIntoView = ref('')
+	const scrollTop = ref(0)
+	const actionsVisible = ref(false)
+	const orderSheetVisible = ref(false)
+	const highlightStageId = ref('')
+
+	let pollTimer: number = -1
+	let scrollTimer: number = -1
+	let polling: boolean = false
+	let destroyed: boolean = false
+	let initialized: boolean = false
+	let pageVisible: boolean = false
+	let initialLoaded: boolean = false
+	let initialRequesting: boolean = false
+
+	onLoad((options) => {
+		const sys = uni.getSystemInfoSync()
+		statusBarHeight.value = sys.statusBarHeight
+		if (options['stageId'] != null) {
+			highlightStageId.value = options['stageId'] as string
+		}
+		initialized = true
+		loadInitial()
+	})
+
+	onShow(() => {
+		pageVisible = true
+		if (!initialized || !hasLocalToken()) {
+			return
+		}
+		if (!initialLoaded) {
+			loadInitial()
+		} else {
+			startPolling()
+		}
+	})
+
+	onHide(() => {
+		pageVisible = false
+		stopPolling()
+	})
+
+	onUnload(() => {
+		destroyed = true
+		pageVisible = false
+		stopPolling()
+		if (scrollTimer >= 0) {
+			clearTimeout(scrollTimer)
+			scrollTimer = -1
+		}
+	})
+
+	function loadInitial (): void {
+		if (initialRequesting) {
+			return
+		}
+		if (!hasLocalToken()) {
+			initialLoading.value = false
+			uni.showModal({
+				title: '请先登录',
+				content: '登录后才能联系康复师',
+				showCancel: false,
+				success: () => {
+					uni.navigateTo({ url: '/pages/login-guide/login-guide' })
+				}
+			})
+			return
+		}
+		initialRequesting = true
+		initialLoading.value = true
+		get('/support_chat/overview', (overviewRes) => {
+			loadLatestMessages()
+		}, (message) => {
+			initialRequesting = false
+			initialLoading.value = false
+			showError(message)
+		})
+	}
+
+	function loadLatestMessages (): void {
+		get('/support_chat/messages?pageSize=20', (res) => {
+			initialRequesting = false
+			initialLoading.value = false
+			if (res.getNumber('code', 0) !== 200) {
+				showError(res.getString('message') ?? '消息加载失败')
+				return
+			}
+			const data = res.getJSON('data')
+			if (data == null) {
+				return
+			}
+			messages.value = parseMessages(data)
+			initialLoaded = true
+			hasMore.value = data.getBoolean('has_more') ?? false
+			nextBefore.value = data.getString('next_before') ?? ''
+			scheduleScrollToBottom()
+			startPolling()
+		}, (message) => {
+			initialRequesting = false
+			initialLoading.value = false
+			showError(message)
+		})
+	}
+
+	function parseMessages (data: UTSJSONObject): SupportChatMessage[] {
+		const result: SupportChatMessage[] = []
+		const list = data.getArray<UTSJSONObject>('messages')
+		if (list == null) {
+			return result
+		}
+		for (let i = 0; i < list.length; i++) {
+			const item = new SupportChatMessage()
+			item.initFromJSON(list[i])
+			result.push(item)
+		}
+		return result
+	}
+
+	function loadOlderMessages (): void {
+		if (loadingOlder.value || !hasMore.value || nextBefore.value.length === 0) {
+			return
+		}
+		loadingOlder.value = true
+		const url = '/support_chat/messages?before=' + encodeURIComponent(nextBefore.value) + '&pageSize=20'
+		get(url, (res) => {
+			loadingOlder.value = false
+			if (res.getNumber('code', 0) !== 200) {
+				return
+			}
+			const data = res.getJSON('data')
+			if (data == null) {
+				return
+			}
+			const older = parseMessages(data)
+			hasMore.value = data.getBoolean('has_more') ?? false
+			nextBefore.value = data.getString('next_before') ?? nextBefore.value
+			if (older.length > 0) {
+				const merged: SupportChatMessage[] = []
+				for (let i = 0; i < older.length; i++) {
+					merged.push(older[i])
+				}
+				for (let i = 0; i < messages.value.length; i++) {
+					merged.push(messages.value[i])
+				}
+				messages.value = merged
+				scrollTop.value = scrollTop.value + 480
+			}
+		}, () => {
+			loadingOlder.value = false
+		})
+	}
+
+	function startPolling (): void {
+		if (destroyed || !pageVisible || pollTimer >= 0) {
+			return
+		}
+		pollTimer = setTimeout(pollNewMessages, 3000)
+	}
+
+	function stopPolling (): void {
+		if (pollTimer >= 0) {
+			clearTimeout(pollTimer)
+			pollTimer = -1
+		}
+	}
+
+	function pollNewMessages (): void {
+		pollTimer = -1
+		if (destroyed || !pageVisible || !hasLocalToken()) {
+			return
+		}
+		if (polling) {
+			startPolling()
+			return
+		}
+		const latest = latestMessageTime()
+		if (latest.length === 0) {
+			startPolling()
+			return
+		}
+		polling = true
+		const url = '/support_chat/messages?after=' + encodeURIComponent(latest) + '&pageSize=50'
+		get(url, (res) => {
+			polling = false
+			if (res.getNumber('code', 0) === 200) {
+				const data = res.getJSON('data')
+				if (data != null) {
+					const fresh = parseMessages(data)
+					if (fresh.length > 0) {
+						appendMessages(fresh)
+						scheduleScrollToBottom()
+					}
+				}
+			}
+			startPolling()
+		}, () => {
+			polling = false
+			startPolling()
+		})
+	}
+
+	function latestMessageTime (): string {
+		if (messages.value.length === 0) {
+			return ''
+		}
+		return messages.value[messages.value.length - 1].createdAt
+	}
+
+	function appendMessages (fresh: SupportChatMessage[]): void {
+		const merged: SupportChatMessage[] = []
+		for (let i = 0; i < messages.value.length; i++) {
+			merged.push(messages.value[i])
+		}
+		for (let i = 0; i < fresh.length; i++) {
+			let exists = false
+			for (let j = 0; j < merged.length; j++) {
+				if (merged[j].id === fresh[i].id) {
+					exists = true
+					break
+				}
+			}
+			if (!exists) {
+				merged.push(fresh[i])
+			}
+		}
+		messages.value = merged
+	}
+
+	function onDraftInput (event: UniEvent): void {
+		draft.value = event.detail.value as string
+	}
+
+	function sendTextMessage (): void {
+		if (sending.value) {
+			return
+		}
+		const content = draft.value.trim()
+		if (content.length === 0) {
+			showError('请输入消息内容')
+			return
+		}
+		const temp = createTempMessage('text', content)
+		messages.value.push(temp)
+		draft.value = ''
+		sending.value = true
+		closeActions()
+		scheduleScrollToBottom()
+
+		const body = new UTSJSONObject()
+		body.set('message_type', 'text')
+		body.set('content', content)
+		post('/support_chat/messages', body, (res) => {
+			sending.value = false
+			handleSendResult(res, temp.id, '消息发送失败')
+		}, (message) => {
+			sending.value = false
+			markMessageFailed(temp.id)
+			showError(message)
+		})
+	}
+
+	function chooseSupportImage (fromCamera: boolean): void {
+		closeActions()
+		wx.chooseImage({
+			count: 1,
+			sizeType: ['compressed'],
+			sourceType: [fromCamera ? 'camera' : 'album'],
+			success: (res) => {
+				if (res.tempFilePaths.length === 0) {
+					return
+				}
+				const sourcePath = res.tempFilePaths[0]
+				wx.compressImage({
+					src: sourcePath,
+					quality: 70,
+					success: (compressed) => {
+						uploadSupportMedia(compressed.tempFilePath, 'image')
+					},
+					fail: () => {
+						uploadSupportMedia(sourcePath, 'image')
+					}
+				})
+			}
+		})
+	}
+
+	function chooseSupportVideo (fromCamera: boolean): void {
+		closeActions()
+		wx.chooseVideo({
+			sourceType: [fromCamera ? 'camera' : 'album'],
+			compressed: true,
+			maxDuration: 60,
+			camera: 'back',
+			success: (res) => {
+				if (res.size > MAX_VIDEO_SIZE) {
+					showError('视频本地压缩后仍需小于30MB，请选择更短的视频')
+					return
+				}
+				uploadSupportMedia(res.tempFilePath, 'video')
+			}
+		})
+	}
+
+	function uploadSupportMedia (filePath: string, mediaType: string): void {
+		if (uploading.value) {
+			return
+		}
+		uploading.value = true
+		uploadingLabel.value = mediaType === 'video' ? '正在压缩并上传视频...' : '正在压缩并上传图片...'
+		uni.showLoading({ title: mediaType === 'video' ? '上传视频' : '上传图片', mask: true })
+		wx.uploadFile({
+			url: API_BASE_URL + '/support_chat/upload',
+			filePath: filePath,
+			name: 'file',
+			header: buildUploadHeader(),
+			formData: {
+				media_type: mediaType
+			},
+			success: (response) => {
+				let data: UTSJSONObject | null = null
+				try {
+					data = JSON.parse(response.data) as UTSJSONObject
+				} catch (error) {
+					data = null
+				}
+				if (data == null || data.getNumber('code', 0) !== 200) {
+					finishUpload()
+					showError(data == null ? '文件上传失败' : (data.getString('message') ?? '文件上传失败'))
+					return
+				}
+				const payload = data.getJSON('data')
+				if (payload == null) {
+					finishUpload()
+					showError('上传结果异常')
+					return
+				}
+				const url = payload.getString('url') ?? ''
+				const size = payload.getNumber('media_size', 0)
+				if (url.length === 0) {
+					finishUpload()
+					showError('上传结果异常')
+					return
+				}
+				sendMediaMessage(mediaType, url, size)
+			},
+			fail: () => {
+				finishUpload()
+				showError('文件上传失败，请稍后重试')
+			}
+		})
+	}
+
+	function sendMediaMessage (mediaType: string, url: string, size: number): void {
+		const temp = createTempMessage(mediaType, '')
+		temp.mediaUrl = url
+		temp.mediaSize = size
+		temp.pending = true
+		messages.value.push(temp)
+		scheduleScrollToBottom()
+		const body = new UTSJSONObject()
+		body.set('message_type', mediaType)
+		body.set('media_url', url)
+		body.set('media_size', size)
+		post('/support_chat/messages', body, (res) => {
+			finishUpload()
+			handleSendResult(res, temp.id, mediaType === 'video' ? '视频发送失败' : '图片发送失败')
+		}, (message) => {
+			finishUpload()
+			markMessageFailed(temp.id)
+			showError(message)
+		})
+	}
+
+	function finishUpload (): void {
+		uploading.value = false
+		uni.hideLoading()
+	}
+
+	function createTempMessage (messageType: string, content: string): SupportChatMessage {
+		const message = new SupportChatMessage()
+		message.id = 'temp-' + Date.now().toString()
+		message.senderRole = 'user'
+		message.messageType = messageType
+		message.content = content
+		message.createdAt = new Date().toISOString()
+		message.timeText = '刚刚'
+		message.pending = true
+		return message
+	}
+
+	function handleSendResult (res: UTSJSONObject, tempId: string, fallback: string): void {
+		if (res.getNumber('code', 0) !== 200) {
+			markMessageFailed(tempId)
+			showError(res.getString('message') ?? fallback)
+			return
+		}
+		const data = res.getJSON('data')
+		const messageJson = data == null ? null : data.getJSON('message')
+		if (messageJson == null) {
+			markMessageFailed(tempId)
+			showError('发送结果异常')
+			return
+		}
+		const finalMessage = new SupportChatMessage()
+		finalMessage.initFromJSON(messageJson)
+		for (let i = 0; i < messages.value.length; i++) {
+			if (messages.value[i].id === tempId) {
+				messages.value[i] = finalMessage
+				break
+			}
+		}
+		scheduleScrollToBottom()
+	}
+
+	function markMessageFailed (tempId: string): void {
+		for (let i = 0; i < messages.value.length; i++) {
+			if (messages.value[i].id === tempId) {
+				messages.value[i].pending = false
+				messages.value[i].failed = true
+				break
+			}
+		}
+	}
+
+	function openOrderSheet (): void {
+		closeActions()
+		orderSheetVisible.value = true
+		loadCourseOptions()
+	}
+
+	function closeOrderSheet (): void {
+		orderSheetVisible.value = false
+	}
+
+	function loadCourseOptions (): void {
+		if (loadingCourses.value) {
+			return
+		}
+		loadingCourses.value = true
+		get('/support_chat/courses', (res) => {
+			loadingCourses.value = false
+			if (res.getNumber('code', 0) !== 200) {
+				showError(res.getString('message') ?? '课程订单加载失败')
+				return
+			}
+			const data = res.getJSON('data')
+			const list = data == null ? null : data.getArray<UTSJSONObject>('courses')
+			const parsed: SupportChatCourseOption[] = []
+			if (list != null) {
+				for (let i = 0; i < list.length; i++) {
+					const item = new SupportChatCourseOption()
+					item.initFromJSON(list[i])
+					parsed.push(item)
+				}
+			}
+			orderCourses.value = parsed
+		}, (message) => {
+			loadingCourses.value = false
+			showError(message)
+		})
+	}
+
+	function sendCourseMessage (course: SupportChatCourseOption): void {
+		if (sending.value) {
+			return
+		}
+		const temp = createTempMessage('course', '')
+		temp.course = course.toCard()
+		messages.value.push(temp)
+		orderSheetVisible.value = false
+		sending.value = true
+		scheduleScrollToBottom()
+		const body = new UTSJSONObject()
+		body.set('message_type', 'course')
+		body.set('course_id', course.courseId)
+		body.set('stage_id', course.stageId)
+		post('/support_chat/messages', body, (res) => {
+			sending.value = false
+			handleSendResult(res, temp.id, '课程订单发送失败')
+		}, (message) => {
+			sending.value = false
+			markMessageFailed(temp.id)
+			showError(message)
+		})
+	}
+
+	function courseTitle (message: SupportChatMessage): string {
+		return message.course == null ? '' : message.course.courseTitle
+	}
+
+	function courseStage (message: SupportChatMessage): string {
+		return message.course == null ? '' : message.course.stageTitle
+	}
+
+	function coursePrice (message: SupportChatMessage): string {
+		return message.course == null ? '0' : message.course.price
+	}
+
+	function courseOrderNo (message: SupportChatMessage): string {
+		return message.course == null ? '' : message.course.orderNo
+	}
+
+	function openCourse (message: SupportChatMessage): void {
+		if (message.course == null || message.course.stageId.length === 0) {
+			return
+		}
+		uni.navigateTo({
+			url: '/pages/rehab-plan/rehab-plan?stageId=' + encodeURIComponent(message.course.stageId)
+				+ '&courseTitle=' + encodeURIComponent(message.course.courseTitle)
+		})
+	}
+
+	function previewImage (message: SupportChatMessage): void {
+		const url = resolveFileUrl(message.mediaUrl)
+		if (url.length === 0) {
+			return
+		}
+		uni.previewImage({
+			urls: [url],
+			current: url
+		})
+	}
+
+	function shouldShowTime (index: number): boolean {
+		if (index === 0) {
+			return true
+		}
+		return shouldShowSupportChatTime(
+			messages.value[index].createdAt,
+			messages.value[index - 1].createdAt
+		)
+	}
+
+	function toggleActions (): void {
+		actionsVisible.value = !actionsVisible.value
+		if (actionsVisible.value) {
+			orderSheetVisible.value = false
+		}
+	}
+
+	function closeActions (): void {
+		actionsVisible.value = false
+	}
+
+	function scheduleScrollToBottom (): void {
+		scrollIntoView.value = ''
+		if (scrollTimer >= 0) {
+			clearTimeout(scrollTimer)
+		}
+		scrollTimer = setTimeout(() => {
+			scrollIntoView.value = 'support-chat-bottom'
+			scrollTimer = -1
+		}, 30)
+	}
+
+	function showError (message: string): void {
+		uni.showToast({
+			title: message.length > 30 ? '操作失败，请稍后重试' : message,
+			icon: 'none'
+		})
+	}
+
+	function goBack (): void {
+		uni.navigateBack()
+	}
+</script>
+
+<style lang="scss">
+	.page {
+		display: flex;
+		width: 100%;
+		height: 100vh;
+		flex-direction: column;
+		overflow: hidden;
+		background: #F5F7FA;
+	}
+
+	.status-space {
+		flex: 0 0 auto;
+		background: #FFFFFF;
+	}
+
+	.chat-header {
+		display: flex;
+		flex: 0 0 64px;
+		flex-direction: row;
+		align-items: center;
+		padding: 0 14px;
+		box-sizing: border-box;
+		border-bottom: 1px solid #F0F1F3;
+		background: #FFFFFF;
+	}
+
+	.back-button {
+		display: flex;
+		width: 34px;
+		height: 40px;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.back-glyph {
+		margin-top: -4px;
+		font-size: 32px;
+		line-height: 32px;
+		color: #1A1D24;
+	}
+
+	.coach-avatar {
+		width: 42px;
+		height: 42px;
+		margin-left: 4px;
+		overflow: hidden;
+		border-radius: 21px;
+		background: #FFF0E8;
+	}
+
+	.coach-avatar-image {
+		width: 42px;
+		height: 42px;
+	}
+
+	.coach-copy {
+		display: flex;
+		min-width: 0;
+		flex: 1;
+		flex-direction: column;
+		gap: 4px;
+		margin-left: 10px;
+	}
+
+	.coach-name {
+		font-size: 16px;
+		font-weight: 600;
+		line-height: 22px;
+		color: #1A1D24;
+	}
+
+	.coach-status-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 5px;
+	}
+
+	.online-dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 4px;
+		background: #32B878;
+	}
+
+	.coach-status {
+		font-size: 11px;
+		line-height: 15px;
+		color: #9AA0A8;
+	}
+
+	.header-placeholder {
+		width: 38px;
+	}
+
+	.message-scroll {
+		min-height: 0;
+		flex: 1;
+		height: 0;
+	}
+
+	.message-list {
+		display: flex;
+		min-height: 100%;
+		flex-direction: column;
+		padding: 10px 16px 8px;
+		box-sizing: border-box;
+	}
+
+	.list-status {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 10px 0;
+	}
+
+	.list-status-text {
+		font-size: 11px;
+		color: #A0A5AD;
+	}
+
+	.time-separator {
+		display: block;
+		margin: 16px 0 12px;
+		text-align: center;
+		font-size: 11px;
+		color: #969CA5;
+	}
+
+	.welcome-row {
+		display: flex;
+		flex-direction: row;
+		align-items: flex-start;
+		gap: 8px;
+		margin-top: 12px;
+	}
+
+	.welcome-bubble {
+		max-width: 78%;
+		padding: 12px 14px;
+		border-radius: 2px 14px 14px 14px;
+		background: #FFFFFF;
+		box-shadow: 0 2px 10px rgba(30, 35, 44, 0.04);
+	}
+
+	.welcome-text {
+		font-size: 13px;
+		line-height: 22px;
+		color: #3B4048;
+	}
+
+	.message-block {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.message-row {
+		display: flex;
+		flex-direction: row;
+		align-items: flex-start;
+		gap: 8px;
+		margin-bottom: 14px;
+	}
+
+	.message-row-user {
+		justify-content: flex-end;
+	}
+
+	.message-avatar-wrap {
+		width: 34px;
+		height: 34px;
+		flex: 0 0 34px;
+		overflow: hidden;
+		border-radius: 17px;
+		background: #FFF0E8;
+	}
+
+	.message-avatar {
+		width: 34px;
+		height: 34px;
+	}
+
+	.message-bubble {
+		display: flex;
+		max-width: 74%;
+		flex-direction: column;
+		padding: 10px 12px;
+		box-sizing: border-box;
+		border-radius: 2px 14px 14px 14px;
+		background: #FFFFFF;
+		box-shadow: 0 2px 10px rgba(30, 35, 44, 0.035);
+	}
+
+	.user-bubble {
+		border-radius: 14px 2px 14px 14px;
+		background: #FF6B35;
+	}
+
+	.course-bubble {
+		padding: 0;
+		border-radius: 14px 2px 14px 14px;
+		background: transparent;
+		box-shadow: none;
+	}
+
+	.course-bubble .message-state {
+		padding: 0 4px;
+		color: #8E949D;
+	}
+
+	.message-text {
+		font-size: 13px;
+		line-height: 22px;
+		color: #30353D;
+		word-break: break-all;
+	}
+
+	.user-message-text {
+		color: #FFFFFF;
+	}
+
+	.image-message {
+		width: 230px;
+		max-width: 58vw;
+		max-height: 300px;
+		border-radius: 9px;
+	}
+
+	.video-message-wrap {
+		width: 230px;
+		max-width: 60vw;
+		overflow: hidden;
+		border-radius: 9px;
+	}
+
+	.video-message {
+		width: 230px;
+		height: 150px;
+		max-width: 60vw;
+		border-radius: 9px;
+		background: #15191D;
+	}
+
+	.course-message {
+		display: flex;
+		width: 276px;
+		max-width: 70vw;
+		flex-direction: column;
+		padding: 13px;
+		box-sizing: border-box;
+		border: 1px solid #ECEEF1;
+		border-radius: 13px;
+		background: #FFFFFF;
+		box-shadow: 0 4px 16px rgba(30, 35, 44, 0.06);
+	}
+
+	.course-kicker-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.course-kicker {
+		font-size: 10px;
+		color: #F05A2A;
+	}
+
+	.course-paid {
+		font-size: 10px;
+		color: #2FA66A;
+	}
+
+	.course-title {
+		margin-top: 7px;
+		overflow: hidden;
+		font-size: 14px;
+		font-weight: 600;
+		line-height: 20px;
+		color: #1F242B;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.course-stage {
+		margin-top: 4px;
+		font-size: 11px;
+		color: #8E949D;
+	}
+
+	.course-divider {
+		height: 1px;
+		margin: 10px 0 8px;
+		background: #EEEFF1;
+	}
+
+	.course-price-block {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 4px;
+	}
+
+	.course-price {
+		font-size: 19px;
+		font-weight: 700;
+		color: #F05A2A;
+	}
+
+	.course-order-no {
+		font-size: 9px;
+		color: #A2A7AF;
+	}
+
+	.course-action {
+		display: flex;
+		height: 34px;
+		align-items: center;
+		justify-content: center;
+		margin-top: 9px;
+		border-radius: 7px;
+		background: #FFF1EA;
+	}
+
+	.course-action-text {
+		font-size: 12px;
+		font-weight: 500;
+		color: #F05A2A;
+	}
+
+	.message-state {
+		margin-top: 4px;
+		font-size: 10px;
+		color: rgba(255, 255, 255, 0.75);
+		text-align: right;
+	}
+
+	.message-failed {
+		color: #FFE0D5;
+	}
+
+	.uploading-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+		gap: 7px;
+		padding: 12px 0;
+	}
+
+	.uploading-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 4px;
+		background: #F05A2A;
+	}
+
+	.uploading-text {
+		font-size: 11px;
+		color: #8D939C;
+	}
+
+	.chat-bottom-space {
+		height: 10px;
+	}
+
+	.composer {
+		flex: 0 0 auto;
+		padding: 8px 12px;
+		padding-bottom: calc(8px + env(safe-area-inset-bottom));
+		border-top: 1px solid #F0F1F3;
+		background: #FFFFFF;
+		box-shadow: 0 -2px 10px rgba(32, 39, 50, 0.035);
+	}
+
+	.composer-main {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.plus-button {
+		display: flex;
+		width: 38px;
+		height: 38px;
+		flex: 0 0 38px;
+		align-items: center;
+		justify-content: center;
+		border-radius: 19px;
+		background: #FFF0E8;
+		transition: transform 0.18s ease;
+	}
+
+	.plus-button-open {
+		transform: rotate(45deg);
+	}
+
+	.plus-glyph {
+		margin-top: -3px;
+		font-size: 29px;
+		font-weight: 300;
+		line-height: 29px;
+		color: #F05A2A;
+	}
+
+	.input-shell {
+		display: flex;
+		min-width: 0;
+		height: 40px;
+		flex: 1;
+		align-items: center;
+		padding: 0 14px;
+		box-sizing: border-box;
+		border-radius: 20px;
+		background: #F5F6F8;
+	}
+
+	.chat-input {
+		width: 100%;
+		height: 40px;
+		padding: 0;
+		line-height: 40px;
+		font-size: 13px;
+		color: #262B32;
+		box-sizing: border-box;
+	}
+
+	.chat-input-placeholder {
+		color: #A3A8B0;
+	}
+
+	.send-button {
+		position: relative;
+		display: flex;
+		width: 36px;
+		height: 36px;
+		flex: 0 0 36px;
+		align-items: center;
+		justify-content: center;
+		background: transparent;
+		overflow: visible;
+	}
+
+	.send-button-disabled {
+		opacity: 0.5;
+	}
+
+	.send-image {
+		position: absolute;
+		left: -10px;
+		top: -10px;
+		width: 56px;
+		height: 60px;
+	}
+
+	.order-button {
+		display: flex;
+		height: 36px;
+		flex: 0 0 auto;
+		flex-direction: row;
+		align-items: center;
+		gap: 3px;
+		padding: 0 9px 0 4px;
+		border-radius: 18px;
+		background: #FFF0E8;
+	}
+
+	.order-icon {
+		width: 28px;
+		height: 28px;
+	}
+
+	.order-button-text {
+		font-size: 12px;
+		font-weight: 500;
+		color: #F05A2A;
+	}
+
+	.action-mask {
+		position: fixed;
+		left: 0;
+		right: 0;
+		top: 0;
+		bottom: 0;
+		z-index: 30;
+		background: rgba(20, 24, 30, 0.16);
+	}
+
+	.action-panel {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		display: flex;
+		flex-wrap: wrap;
+		flex-direction: row;
+		padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
+		box-sizing: border-box;
+		border-radius: 18px 18px 0 0;
+		background: #FFFFFF;
+	}
+
+	.action-item {
+		display: flex;
+		width: 25%;
+		flex-direction: column;
+		align-items: center;
+		gap: 7px;
+	}
+
+	.action-icon-wrap {
+		display: flex;
+		width: 48px;
+		height: 48px;
+		align-items: center;
+		justify-content: center;
+		border-radius: 14px;
+		background: #FFF4EE;
+	}
+
+	.action-icon {
+		width: 24px;
+		height: 24px;
+	}
+
+	.action-label {
+		font-size: 12px;
+		color: #575D66;
+	}
+
+	.action-hint {
+		width: 75%;
+		display: flex;
+		align-items: center;
+		padding: 0 4px;
+	}
+
+	.action-hint-text {
+		font-size: 10px;
+		line-height: 16px;
+		color: #A1A6AE;
+	}
+
+	.sheet-mask {
+		position: fixed;
+		left: 0;
+		right: 0;
+		top: 0;
+		bottom: 0;
+		z-index: 40;
+		display: flex;
+		flex-direction: column;
+		justify-content: flex-end;
+		background: rgba(20, 24, 30, 0.34);
+	}
+
+	.order-sheet {
+		display: flex;
+		max-height: 68vh;
+		flex-direction: column;
+		padding: 18px 16px calc(14px + env(safe-area-inset-bottom));
+		box-sizing: border-box;
+		border-radius: 20px 20px 0 0;
+		background: #FFFFFF;
+	}
+
+	.sheet-header {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 14px;
+	}
+
+	.sheet-title-wrap {
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+	}
+
+	.sheet-title {
+		font-size: 17px;
+		font-weight: 600;
+		color: #1F242B;
+	}
+
+	.sheet-subtitle {
+		font-size: 11px;
+		color: #969CA5;
+	}
+
+	.sheet-close {
+		display: flex;
+		width: 32px;
+		height: 32px;
+		align-items: center;
+		justify-content: center;
+		border-radius: 16px;
+		background: #F4F5F7;
+	}
+
+	.sheet-close-text {
+		margin-top: -3px;
+		font-size: 24px;
+		color: #727881;
+	}
+
+	.order-list {
+		max-height: 48vh;
+	}
+
+	.sheet-state {
+		display: flex;
+		height: 150px;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+	}
+
+	.sheet-state-text,
+	.empty-order-subtitle {
+		font-size: 11px;
+		color: #9CA1A9;
+	}
+
+	.empty-order-title {
+		font-size: 14px;
+		font-weight: 500;
+		color: #4E545D;
+	}
+
+	.order-option {
+		display: flex;
+		flex-direction: column;
+		padding: 13px;
+		margin-bottom: 10px;
+		border: 1px solid #ECEEF1;
+		border-radius: 12px;
+		background: #FAFAFB;
+	}
+
+	.order-option-highlight {
+		border-color: #FFB292;
+		background: #FFF7F2;
+	}
+
+	.order-option-head {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px;
+	}
+
+	.order-option-title {
+		min-width: 0;
+		flex: 1;
+		overflow: hidden;
+		font-size: 14px;
+		font-weight: 600;
+		color: #242A31;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.order-option-price {
+		font-size: 15px;
+		font-weight: 700;
+		color: #F05A2A;
+	}
+
+	.order-option-stage {
+		margin-top: 5px;
+		font-size: 12px;
+		color: #727983;
+	}
+
+	.order-option-foot {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		margin-top: 9px;
+	}
+
+	.order-option-no,
+	.order-option-time {
+		font-size: 9px;
+		color: #A0A5AD;
+	}
+</style>

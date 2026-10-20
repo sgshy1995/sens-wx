@@ -428,9 +428,14 @@
 	}
 
 	function onContactCoachTap (): void {
-		uni.showToast({
-			title: '请联系客服微信或拨打线下康复电话',
-			icon: 'none'
+		let url = '/pages/support-chat/support-chat'
+		if (stageId.value.length > 0) {
+			url += '?courseId=' + encodeURIComponent(courseId.value)
+				+ '&stageId=' + encodeURIComponent(stageId.value)
+				+ '&courseTitle=' + encodeURIComponent(courseTitle.value)
+		}
+		uni.navigateTo({
+			url
 		})
 	}
 

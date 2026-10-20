@@ -98,7 +98,7 @@
 									<text v-if="item.course.stageRemark.length > 0" class="unlocked-current-remark">{{ item.course.stageRemark }}</text>
 								</view>
 								<view class="unlocked-actions">
-									<view class="unlocked-action unlocked-action-contact" @click="onContactCoachTap">
+									<view class="unlocked-action unlocked-action-contact" @click="onContactCoachTap(item.course)">
 										<image class="unlocked-action-icon" src="/static/icons/ic-online-message.svg" mode="aspectFit"></image>
 										<text class="unlocked-action-text">联系康复师</text>
 									</view>
@@ -774,11 +774,13 @@
 		})
 	}
 
-	function onContactCoachTap (): void {
-		uni.showToast({
-			title: '请联系客服微信或拨打线下康复电话',
-			icon: 'none'
-		})
+	function onContactCoachTap (course: RehabChatCourse | null): void {
+		let url = '/pages/support-chat/support-chat'
+		if (course != null && course.stageId.length > 0) {
+			url += '?courseId=' + encodeURIComponent(course.id)
+				+ '&stageId=' + encodeURIComponent(course.stageId)
+		}
+		uni.navigateTo({ url })
 	}
 
 	function onViewCourseTap (course: RehabChatCourse | null): void {

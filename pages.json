@@ -34,6 +34,14 @@
 			}
 		},
 		{
+			"path": "pages/support-chat/support-chat",
+			"style": {
+				"navigationBarTitleText": "联系康复师",
+				"navigationStyle": "custom",
+				"backgroundColor": "#F5F7FA"
+			}
+		},
+		{
 			"path": "pages/rehab-unlock/rehab-unlock",
 			"style": {
 				"navigationBarTitleText": "订单确认",
@@ -53,6 +61,14 @@
 			"path": "pages/mine/mine",
 			"style": {
 				"navigationBarTitleText": "我的",
+				"navigationStyle": "custom",
+				"backgroundColor": "#F7F8FA"
+			}
+		},
+		{
+			"path": "pages/my-plans/my-plans",
+			"style": {
+				"navigationBarTitleText": "我的方案",
 				"navigationStyle": "custom",
 				"backgroundColor": "#F7F8FA"
 			}

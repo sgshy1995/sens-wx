@@ -1,0 +1,366 @@
+<template>
+	<view class="page">
+		<view class="hero">
+			<view class="status-space" :style="{ height: statusBarHeight + 'px' }"></view>
+			<view class="nav-row">
+				<view class="back-button" @click="goBack">
+					<text class="back-glyph">‹</text>
+				</view>
+				<text class="nav-title">我的方案</text>
+				<view class="nav-placeholder"></view>
+			</view>
+			<view class="summary-row">
+				<view class="summary-chip">
+					<text class="summary-chip-text">已购 {{ plans.length }} 个方案</text>
+				</view>
+				<view class="summary-chip">
+					<text class="summary-chip-text">{{ activeCount }} 个有效</text>
+				</view>
+			</view>
+		</view>
+
+		<scroll-view class="content-scroll" scroll-y>
+			<view class="content">
+				<view v-if="loading" class="state-card">
+					<text class="state-text">正在加载已购方案...</text>
+				</view>
+				<view v-else-if="loadFailed" class="state-card" @click="loadPlans">
+					<text class="state-text">{{ failMessage }}，点击重试</text>
+				</view>
+				<view v-else-if="plans.length === 0" class="empty-card">
+					<image class="empty-icon" src="/static/icons/ic-mine-scheme.svg" mode="aspectFit"></image>
+					<text class="empty-title">还没有已购方案</text>
+					<text class="empty-description">可以在康复页查看并解锁适合自己的组合课程</text>
+					<view class="empty-action" @click="goRehab">
+						<text class="empty-action-text">去康复页看看</text>
+					</view>
+				</view>
+				<view v-else class="plan-list">
+					<button
+						v-for="plan in plans"
+						:key="plan.id"
+						class="plan-row"
+						hover-class="none"
+						@click="openPlan(plan)"
+					>
+						<view class="plan-copy">
+							<text class="plan-title">{{ plan.displayTitle() }}</text>
+							<text class="plan-meta">购买 {{ plan.purchaseDateText }} · {{ plan.validityText }}</text>
+							<text v-if="plan.courseTitle.length > 0 && plan.courseTitle !== plan.displayTitle()" class="plan-course">{{ plan.courseTitle }}</text>
+						</view>
+						<image class="chevron" src="/static/icons/ic-chevron.svg" mode="aspectFit"></image>
+					</button>
+				</view>
+				<text class="bottom-note">仅显示已购买的方案 · 新方案可在康复页购买</text>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { hasLocalToken } from '../../common/auth'
+	import { PurchasedPlan } from '../../common/my-plans'
+	import { get } from '../../common/request'
+
+	const statusBarHeight = ref(24)
+	const plans = ref<PurchasedPlan[]>([])
+	const loading = ref(true)
+	const loadFailed = ref(false)
+	const failMessage = ref('方案加载失败')
+	const loaded = ref(false)
+	const requesting = ref(false)
+	const activeCount = computed(() => {
+		let count = 0
+		for (let i = 0; i < plans.value.length; i++) {
+			if (plans.value[i].status === 1) {
+				count += 1
+			}
+		}
+		return count
+	})
+
+	onLoad(() => {
+		const sys = uni.getSystemInfoSync()
+		statusBarHeight.value = sys.statusBarHeight
+		if (!hasLocalToken()) {
+			loading.value = false
+			loadFailed.value = true
+			failMessage.value = '请先登录后查看已购方案'
+			return
+		}
+		loadPlans()
+	})
+
+	onShow(() => {
+		if (loaded.value && hasLocalToken()) {
+			loadPlans()
+		}
+	})
+
+	function loadPlans (): void {
+		if (requesting.value || !hasLocalToken()) {
+			return
+		}
+		requesting.value = true
+		loading.value = plans.value.length === 0
+		loadFailed.value = false
+		get('/rehab_combination_course/unlocks', (res) => {
+			requesting.value = false
+			loading.value = false
+			if (res.getNumber('code', 0) !== 200) {
+				loadFailed.value = true
+				failMessage.value = res.getString('message') ?? '方案加载失败'
+				return
+			}
+			const data = res.getJSON('data')
+			const list = data == null ? null : data.getArray<UTSJSONObject>('data')
+			const parsed: PurchasedPlan[] = []
+			if (list != null) {
+				for (let i = 0; i < list.length; i++) {
+					const plan = new PurchasedPlan()
+					plan.initFromJSON(list[i])
+					parsed.push(plan)
+				}
+			}
+			plans.value = parsed
+			loaded.value = true
+		}, (message) => {
+			requesting.value = false
+			loading.value = false
+			loadFailed.value = true
+			failMessage.value = message
+		})
+	}
+
+	function openPlan (plan: PurchasedPlan): void {
+		uni.navigateTo({
+			url: '/pages/rehab-plan/rehab-plan?stageId=' + encodeURIComponent(plan.stageId)
+				+ '&courseTitle=' + encodeURIComponent(plan.courseTitle)
+		})
+	}
+
+	function goRehab (): void {
+		uni.switchTab({ url: '/pages/rehab/rehab' })
+	}
+
+	function goBack (): void {
+		uni.navigateBack()
+	}
+</script>
+
+<style lang="scss">
+	.page {
+		display: flex;
+		height: 100vh;
+		flex-direction: column;
+		overflow: hidden;
+		background: #F7F8FA;
+	}
+
+	.hero {
+		flex: 0 0 auto;
+		padding: 0 20px 22px;
+		background-image: linear-gradient(135deg, #FF8A3D 0%, #FF5224 100%);
+	}
+
+	.status-space {
+		width: 100%;
+	}
+
+	.nav-row {
+		display: flex;
+		height: 44px;
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.back-button {
+		display: flex;
+		width: 32px;
+		height: 32px;
+		align-items: center;
+		justify-content: center;
+		border-radius: 16px;
+		background: rgba(255, 255, 255, 0.18);
+	}
+
+	.back-glyph {
+		margin-top: -3px;
+		font-size: 28px;
+		line-height: 28px;
+		color: #FFFFFF;
+	}
+
+	.nav-title {
+		flex: 1;
+		text-align: center;
+		font-size: 17px;
+		font-weight: 600;
+		color: #FFFFFF;
+	}
+
+	.nav-placeholder {
+		width: 32px;
+		height: 32px;
+	}
+
+	.summary-row {
+		display: flex;
+		flex-direction: row;
+		gap: 8px;
+		margin-top: 8px;
+	}
+
+	.summary-chip {
+		padding: 6px 11px;
+		border-radius: 999px;
+		background: rgba(255, 255, 255, 0.18);
+	}
+
+	.summary-chip-text {
+		font-size: 11px;
+		color: #FFFFFF;
+	}
+
+	.content-scroll {
+		min-height: 0;
+		flex: 1;
+		height: 0;
+	}
+
+	.content {
+		display: flex;
+		flex-direction: column;
+		padding: 16px 16px 44px;
+		box-sizing: border-box;
+	}
+
+	.state-card,
+	.empty-card {
+		display: flex;
+		min-height: 220px;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		padding: 24px;
+		box-sizing: border-box;
+		border: 1px solid #EEF0F3;
+		border-radius: 16px;
+		background: #FFFFFF;
+	}
+
+	.state-text {
+		font-size: 12px;
+		color: #9CA3AF;
+	}
+
+	.empty-icon {
+		width: 54px;
+		height: 54px;
+	}
+
+	.empty-title {
+		margin-top: 14px;
+		font-size: 15px;
+		font-weight: 600;
+		color: #343A42;
+	}
+
+	.empty-description {
+		margin-top: 6px;
+		font-size: 11px;
+		color: #9CA3AF;
+	}
+
+	.empty-action {
+		display: flex;
+		height: 34px;
+		align-items: center;
+		justify-content: center;
+		margin-top: 18px;
+		padding: 0 18px;
+		border-radius: 17px;
+		background: #FFF0E8;
+	}
+
+	.empty-action-text {
+		font-size: 12px;
+		color: #F05A2A;
+	}
+
+	.plan-list {
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+		border: 1px solid #EEF0F3;
+		border-radius: 16px;
+		background: #FFFFFF;
+		box-shadow: 0 4px 16px rgba(23, 26, 36, 0.04);
+	}
+
+	.plan-row {
+		display: flex;
+		min-height: 82px;
+		flex-direction: row;
+		align-items: center;
+		gap: 12px;
+		margin: 0;
+		padding: 12px;
+		border-bottom: 1px solid #F3F4F6;
+		border-radius: 0;
+		background: #FFFFFF;
+		text-align: left;
+		line-height: normal;
+	}
+
+	.plan-row:last-child {
+		border-bottom: 0;
+	}
+
+	.plan-row::after {
+		border: none;
+	}
+
+	.plan-copy {
+		display: flex;
+		min-width: 0;
+		flex: 1;
+		flex-direction: column;
+		gap: 5px;
+	}
+
+	.plan-title {
+		overflow: hidden;
+		font-size: 15px;
+		font-weight: 600;
+		color: #1F242B;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.plan-meta {
+		font-size: 10px;
+		color: #9CA3AF;
+	}
+
+	.plan-course {
+		overflow: hidden;
+		font-size: 10px;
+		color: #7D838C;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.chevron {
+		width: 16px;
+		height: 16px;
+		flex: 0 0 16px;
+	}
+
+	.bottom-note {
+		margin-top: 16px;
+		text-align: center;
+		font-size: 11px;
+		color: #9CA3AF;
+	}
+</style>
