@@ -32,10 +32,6 @@
 						<text class="stat-label">康复天数</text>
 					</view>
 					<view class="stat-item">
-						<text class="stat-value">{{ loggedIn ? schemeCount : '—' }}</text>
-						<text class="stat-label">康复方案</text>
-					</view>
-					<view class="stat-item">
 						<text class="stat-value">{{ loggedIn ? collectCount : '—' }}</text>
 						<text class="stat-label">收藏</text>
 					</view>
@@ -141,19 +137,6 @@
 				<button
 					class="tap-button menu-row"
 					hover-class="none"
-					:open-type="canTriggerPhoneLogin() ? 'getPhoneNumber' : ''"
-					@click="handleLoginTap"
-					@getphonenumber="onGetPhoneNumber"
-				>
-					<image class="menu-icon" src="/static/icons/ic-mine-collect.svg" mode="aspectFit"></image>
-					<text class="menu-title">我的收藏</text>
-					<image class="chevron-icon" src="/static/icons/ic-chevron.svg" mode="aspectFit"></image>
-				</button>
-				<view class="menu-divider"></view>
-
-				<button
-					class="tap-button menu-row"
-					hover-class="none"
 					@click="goOnlineConsult"
 				>
 					<image class="menu-icon" src="/static/icons/ic-contact.svg" mode="aspectFit"></image>
@@ -178,7 +161,6 @@
 	const userHint = ref('点击登录，同步康复计划与伤痛档案')
 	const avatarUrl = ref('')
 	const rehabDays = ref(1)
-	const schemeCount = ref(0)
 	const purchasedPlanCount = ref(0)
 	const collectCount = ref(0)
 	const likeCount = ref(0)
@@ -265,14 +247,6 @@
 			painRecordStatus.value = injuryHistory.length > 0 || injuryRecent.length > 0 || dischargeAbstract.length > 0 || imageData.length > 0 ? '已维护' : '未维护'
 		}, () => {})
 
-		get('/patient_course', (res) => {
-			if (res.getNumber('code', 0) !== 200) {
-				return
-			}
-			const list = res.getArray<UTSJSONObject>('data')
-			schemeCount.value = list == null ? 0 : list.length
-		}, () => {})
-
 		get('/rehab_combination_course/unlocks', (res) => {
 			if (res.getNumber('code', 0) !== 200) {
 				return
@@ -305,7 +279,6 @@
 		userHint.value = '点击登录，同步康复计划与伤痛档案'
 		avatarUrl.value = ''
 		rehabDays.value = 1
-		schemeCount.value = 0
 		purchasedPlanCount.value = 0
 		collectCount.value = 0
 		likeCount.value = 0
@@ -521,6 +494,7 @@
 
 	.stat-item {
 		flex: 1;
+		width: 0;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
