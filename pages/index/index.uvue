@@ -133,15 +133,15 @@
 					</view>
 
 					<view class="interact-row">
-						<view class="interact-group interact-group-left">
+						<view class="interact-group interact-group-left" @click.stop="toggleArticleLike(item)">
 							<image class="interact-icon-img" :src="item.isLiked ? '/static/icons/ic-like-active.svg' : '/static/icons/ic-like.svg'" mode="aspectFit"></image>
 							<text class="interact-count">{{ item.likeNum }}</text>
 						</view>
-						<view class="interact-group">
+						<view class="interact-group" @click.stop="openArticleComments(item)">
 							<image class="interact-icon-img" src="/static/icons/ic-comment.svg" mode="aspectFit"></image>
 							<text class="interact-count">{{ item.commentNum }}</text>
 						</view>
-						<view class="interact-group interact-group-right">
+						<view class="interact-group interact-group-right" @click.stop="toggleArticleFavorite(item)">
 							<image class="interact-icon-img" :src="item.isCollected ? '/static/icons/ic-star-active.svg' : '/static/icons/ic-star.svg'" mode="aspectFit"></image>
 							<text class="interact-count">{{ item.collectNum }}</text>
 						</view>
@@ -222,11 +222,19 @@
 				</view>
 			</view>
 		</view>
+
+		<view v-if="noticeVisible" class="notice-layer">
+			<view class="notice-card">
+				<view class="notice-accent"></view>
+				<text class="notice-text">{{ noticeText }}</text>
+			</view>
+		</view>
 	</view>
 </template>
 
 <script setup lang="uts">
-	import { get } from '../../common/request'
+	import { hasLocalToken } from '../../common/auth'
+	import { get, post } from '../../common/request'
 	import { ForumArticle, PrescriptionTag, formatCount, lastTagName, resolveFileUrl } from '../../common/forum'
 
 	const statusBarHeight = ref(24)
@@ -264,6 +272,15 @@
 	const initialLoading = ref(true)
 	const tagsReady = ref(false)
 	const listReady = ref(false)
+	const likePending = ref(false)
+	const favoritePending = ref(false)
+	const noticeVisible = ref(false)
+	const noticeText = ref('')
+	const INTERACTION_DEBOUNCE_MS = 700
+	let lastLikeTapAt = 0
+	let lastFavoriteTapAt = 0
+	let noticeTimer = -1
+	let pageShown = false
 
 	function checkInitialLoaded (): void {
 		if (tagsReady.value && listReady.value) {
@@ -393,7 +410,7 @@
 			}
 			rebuildCarousel(parsed)
 		}, (message) => {
-			uni.showToast({ title: message, icon: 'none' })
+			showNotice(message)
 		})
 	}
 
@@ -416,7 +433,8 @@
 			finished.value = false
 		}
 		loading.value = true
-		let url = '/forum_article/public?pageNo=' + page.value + '&pageSize=' + pageSize.value
+		const listPath = hasLocalToken() ? '/forum_article' : '/forum_article/public'
+		let url = listPath + '?pageNo=' + page.value + '&pageSize=' + pageSize.value
 		if (selectedTagId.value.length > 0) {
 			url += '&tag=' + selectedTagId.value
 		}
@@ -439,7 +457,7 @@
 			finishLoading()
 		}, (message) => {
 			finishLoading()
-			uni.showToast({ title: message, icon: 'none' })
+			showNotice(message)
 		})
 	}
 
@@ -484,6 +502,118 @@
 		}
 		uni.navigateTo({
 			url: '/pages/forum-detail/forum-detail?id=' + item.id
+		})
+	}
+
+	function openArticleComments (item: ForumArticle): void {
+		if (item.id.length === 0) {
+			return
+		}
+		uni.navigateTo({
+			url: '/pages/forum-detail/forum-detail?id=' + item.id + '&focusComment=1'
+		})
+	}
+
+	function requireLogin (content: string): boolean {
+		if (hasLocalToken()) {
+			return true
+		}
+		uni.showModal({
+			title: '请先登录',
+			content: content,
+			showCancel: false,
+			success: () => {
+				uni.navigateTo({ url: '/pages/login-guide/login-guide' })
+			}
+		})
+		return false
+	}
+
+	function showNotice (message: string): void {
+		if (message.length === 0) {
+			return
+		}
+		noticeText.value = message
+		noticeVisible.value = true
+		if (noticeTimer >= 0) {
+			clearTimeout(noticeTimer)
+		}
+		noticeTimer = setTimeout(() => {
+			noticeVisible.value = false
+			noticeTimer = -1
+		}, 2400)
+	}
+
+	function showRequestError (res: UTSJSONObject, fallback: string): void {
+		showNotice(res.getString('message') ?? fallback)
+	}
+
+	function toggleArticleLike (item: ForumArticle): void {
+		const now = Date.now()
+		if (likePending.value || now - lastLikeTapAt < INTERACTION_DEBOUNCE_MS) {
+			showNotice('操作太频繁，请稍后再试')
+			return
+		}
+		if (!requireLogin('登录后才能点赞文章')) {
+			return
+		}
+		lastLikeTapAt = now
+		const nextStatus = item.isLiked ? 0 : 1
+		const requestData = new UTSJSONObject()
+		requestData.set('target_type', 1)
+		requestData.set('target_id', item.id)
+		requestData.set('status', nextStatus)
+		likePending.value = true
+		post('/forum_like', requestData, (res) => {
+			likePending.value = false
+			if (res.getNumber('code', 0) !== 200) {
+				showRequestError(res, '操作失败')
+				return
+			}
+			item.isLiked = nextStatus === 1
+			if (item.isLiked) {
+				item.likeNum += 1
+			} else {
+				item.likeNum = Math.max(0, item.likeNum - 1)
+			}
+			showNotice(item.isLiked ? '点赞成功' : '已取消点赞')
+		}, (message) => {
+			likePending.value = false
+			showNotice(message)
+		})
+	}
+
+	function toggleArticleFavorite (item: ForumArticle): void {
+		const now = Date.now()
+		if (favoritePending.value || now - lastFavoriteTapAt < INTERACTION_DEBOUNCE_MS) {
+			showNotice('操作太频繁，请稍后再试')
+			return
+		}
+		if (!requireLogin('登录后才能收藏文章')) {
+			return
+		}
+		lastFavoriteTapAt = now
+		const nextStatus = item.isCollected ? 0 : 1
+		const requestData = new UTSJSONObject()
+		requestData.set('article_id', item.id)
+		requestData.set('status', nextStatus)
+		favoritePending.value = true
+		post('/forum_favorite', requestData, (res) => {
+			favoritePending.value = false
+			if (res.getNumber('code', 0) !== 200) {
+				showRequestError(res, '操作失败')
+				return
+			}
+			item.isCollected = nextStatus === 1
+			if (item.isCollected) {
+				item.collectNum += 1
+			} else {
+				item.collectNum = Math.max(0, item.collectNum - 1)
+			}
+			showNotice(item.isCollected ? '收藏成功' : '已取消收藏')
+		}, (message) => {
+			favoritePending.value = false
+			showNotice(message)
 		})
 	}
 
@@ -532,7 +662,7 @@
 
 	function confirmPicker (): void {
 		if (pickerSelectedTagId.value.length === 0) {
-			uni.showToast({ title: '请选择康复标签', icon: 'none' })
+		showNotice('请选择康复标签')
 			return
 		}
 		customMode.value = true
@@ -565,6 +695,18 @@
 		loadList(true)
 	})
 
+	onShow(() => {
+		if (!pageShown) {
+			pageShown = true
+			return
+		}
+		if (initialLoading.value) {
+			return
+		}
+		loadCarousel()
+		loadList(true)
+	})
+
 	onReachBottom(() => {
 		loadList(false)
 	})
@@ -572,6 +714,13 @@
 	onPullDownRefresh(() => {
 		loadCarousel()
 		loadList(true)
+	})
+
+	onUnload(() => {
+		if (noticeTimer >= 0) {
+			clearTimeout(noticeTimer)
+			noticeTimer = -1
+		}
 	})
 </script>
 
@@ -1164,6 +1313,56 @@
 	.interact-count {
 		font-size: 11px;
 		color: #9CA3AF;
+	}
+
+	.notice-layer {
+		position: fixed;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		z-index: 300;
+		padding: 24px;
+		box-sizing: border-box;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+		pointer-events: none;
+	}
+
+	.notice-card {
+		max-width: 360px;
+		min-width: 180px;
+		padding: 12px 16px;
+		box-sizing: border-box;
+		background: #1F2937;
+		border: 1px solid #3A4658;
+		border-radius: 14px;
+		box-shadow: 0 16px 40px rgba(0, 0, 0, 0.3);
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+		gap: 9px;
+	}
+
+	.notice-accent {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: #FF8A50;
+		flex-shrink: 0;
+	}
+
+	.notice-text {
+		flex: 0 1 auto;
+		font-size: 15px;
+		font-weight: 600;
+		line-height: 24px;
+		color: #FFFFFF;
+		text-align: center;
+		word-break: break-all;
 	}
 
 	.list-status {
