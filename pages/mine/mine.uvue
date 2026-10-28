@@ -143,6 +143,17 @@
 					<text class="menu-title">在线咨询</text>
 					<image class="chevron-icon" src="/static/icons/ic-chevron.svg" mode="aspectFit"></image>
 				</button>
+				<view class="menu-divider"></view>
+
+				<button
+					class="tap-button menu-row"
+					hover-class="none"
+					@click="goRehabTools"
+				>
+					<image class="menu-icon" src="/static/icons/ic-tools.svg" mode="aspectFit"></image>
+					<text class="menu-title">康复工具</text>
+					<image class="chevron-icon" src="/static/icons/ic-chevron.svg" mode="aspectFit"></image>
+				</button>
 			</view>
 		</view>
 	</view>
@@ -205,6 +216,12 @@
 	function goOnlineConsult (): void {
 		uni.navigateTo({
 			url: '/pages/support-chat/support-chat'
+		})
+	}
+
+	function goRehabTools (): void {
+		uni.navigateTo({
+			url: '/pages/rehab-tools/rehab-tools'
 		})
 	}
 

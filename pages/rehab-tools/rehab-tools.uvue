@@ -1,0 +1,263 @@
+<template>
+	<view class="page">
+		<view class="safe-nav" :style="{ paddingTop: statusBarHeight + 'px' }">
+			<view class="nav-row">
+				<view class="back-button" @click="goBack">
+					<text class="back-glyph">‹</text>
+				</view>
+				<text class="nav-title">康复工具</text>
+				<view class="nav-placeholder"></view>
+			</view>
+		</view>
+
+		<scroll-view class="content-scroll" scroll-y>
+			<view class="content-inner">
+				<view class="intro-card">
+					<image class="intro-icon" src="/static/icons/ic-camera-do.svg" mode="aspectFit"></image>
+					<text class="intro-text">使用提示：请拍照或选择部位照片，通过智能分析测量角度，以帮助您进行康复训练</text>
+				</view>
+
+				<view class="tool-card">
+					<image class="tool-icon" src="/static/icons/ic-guanjie-do.svg" mode="aspectFit"></image>
+					<view class="tool-copy">
+						<text class="tool-title">关节角度测量</text>
+						<text class="tool-description">选择关节照片，评估关节的屈伸角度</text>
+					</view>
+					<image class="chevron-icon" src="/static/icons/ic-chevron.svg" mode="aspectFit"></image>
+				</view>
+
+				<view class="tool-card">
+					<image class="tool-icon" src="/static/icons/ic-jizhu-do.svg" mode="aspectFit"></image>
+					<view class="tool-copy">
+						<text class="tool-title">脊柱角度测量</text>
+						<text class="tool-description">选择背部照片，评估脊柱的侧弯与角度</text>
+					</view>
+					<image class="chevron-icon" src="/static/icons/ic-chevron.svg" mode="aspectFit"></image>
+				</view>
+			</view>
+		</scroll-view>
+
+		<view class="bottom-nav">
+			<view class="nav-capsule">
+				<view class="nav-tab" @click="switchTab('/pages/index/index')">
+					<image class="nav-icon" src="/static/icons/ic-forum-inactive.png" mode="aspectFit"></image>
+					<text class="nav-text">论坛</text>
+				</view>
+				<view class="nav-tab" @click="switchTab('/pages/rehab/rehab')">
+					<image class="nav-icon" src="/static/icons/ic-rehab-inactive.png" mode="aspectFit"></image>
+					<text class="nav-text">康复</text>
+				</view>
+				<view class="nav-tab nav-tab-active">
+					<image class="nav-icon" src="/static/icons/ic-mine-active.png" mode="aspectFit"></image>
+					<text class="nav-text nav-text-active">我的</text>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	const statusBarHeight = ref(24)
+
+	onLoad(() => {
+		const sys = uni.getSystemInfoSync()
+		statusBarHeight.value = sys.statusBarHeight
+	})
+
+	function goBack (): void {
+		uni.navigateBack()
+	}
+
+	function switchTab (url: string): void {
+		uni.switchTab({
+			url
+		})
+	}
+</script>
+
+<style lang="scss">
+	.page {
+		display: flex;
+		flex-direction: column;
+		height: 100vh;
+		background: #F7F8FA;
+	}
+
+	.safe-nav {
+		flex-shrink: 0;
+		background: #FFFFFF;
+	}
+
+	.nav-row {
+		height: 44px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 16px;
+		padding-right: 16px;
+	}
+
+	.back-button {
+		width: 32px;
+		height: 32px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 16px;
+		background: #F3F4F6;
+		flex-shrink: 0;
+	}
+
+	.back-glyph {
+		margin-top: -3px;
+		font-size: 28px;
+		line-height: 28px;
+		color: #1A1D24;
+	}
+
+	.nav-title {
+		flex: 1;
+		text-align: center;
+		font-size: 17px;
+		font-weight: 600;
+		color: #1A1D24;
+	}
+
+	.nav-placeholder {
+		width: 32px;
+		height: 32px;
+		flex-shrink: 0;
+	}
+
+	.content-scroll {
+		flex: 1;
+		min-height: 0;
+	}
+
+	.content-inner {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+		padding: 16px 16px 24px;
+	}
+
+	.intro-card {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 10px;
+		padding: 10px 12px;
+		background: #F0F2FF;
+		border-radius: 12px;
+	}
+
+	.intro-icon {
+		width: 28px;
+		height: 28px;
+		flex-shrink: 0;
+	}
+
+	.intro-text {
+		flex: 1;
+		font-size: 12px;
+		font-weight: 400;
+		line-height: 18px;
+		color: #6B7194;
+	}
+
+	.tool-card {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 14px;
+		padding: 16px;
+		background: #FFFFFF;
+		border: 1px solid #EEF0F3;
+		border-radius: 16px;
+		box-shadow: 0 4px 16px rgba(23, 26, 36, 0.04);
+	}
+
+	.tool-icon {
+		width: 56px;
+		height: 56px;
+		flex-shrink: 0;
+	}
+
+	.tool-copy {
+		display: flex;
+		min-width: 0;
+		flex: 1;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.tool-title {
+		font-size: 16px;
+		font-weight: 500;
+		line-height: 22px;
+		color: #1A1D24;
+	}
+
+	.tool-description {
+		font-size: 12px;
+		font-weight: 400;
+		line-height: 18px;
+		color: #8A90A0;
+	}
+
+	.chevron-icon {
+		width: 16px;
+		height: 16px;
+		flex-shrink: 0;
+	}
+
+	.bottom-nav {
+		height: 86px;
+		flex-shrink: 0;
+		padding: 12px 21px;
+		box-sizing: border-box;
+		background: #FFFFFF;
+		box-shadow: 0 -4px 16px rgba(23, 26, 36, 0.06);
+	}
+
+	.nav-capsule {
+		display: flex;
+		height: 62px;
+		flex-direction: row;
+		padding: 4px;
+		box-sizing: border-box;
+		background: #FFFFFF;
+		border: 1px solid #EEF0F3;
+		border-radius: 31px;
+	}
+
+	.nav-tab {
+		display: flex;
+		flex: 1;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 3px;
+		border-radius: 27px;
+	}
+
+	.nav-tab-active {
+		background: #FF6B35;
+	}
+
+	.nav-icon {
+		width: 18px;
+		height: 18px;
+	}
+
+	.nav-text {
+		font-size: 10px;
+		font-weight: 500;
+		line-height: 14px;
+		color: #9CA3AF;
+	}
+
+	.nav-text-active {
+		color: #FFFFFF;
+	}
+</style>

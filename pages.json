@@ -66,6 +66,14 @@
 			}
 		},
 		{
+			"path": "pages/rehab-tools/rehab-tools",
+			"style": {
+				"navigationBarTitleText": "康复工具",
+				"navigationStyle": "custom",
+				"backgroundColor": "#F7F8FA"
+			}
+		},
+		{
 			"path": "pages/my-plans/my-plans",
 			"style": {
 				"navigationBarTitleText": "我的方案",
