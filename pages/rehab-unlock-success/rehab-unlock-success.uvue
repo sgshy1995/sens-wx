@@ -64,6 +64,7 @@
 	const paymentTypeText = ref('余额支付')
 	const courseTitle = ref('康复方案')
 	const stageTitle = ref('')
+	const returnToFilter = ref(false)
 
 	onLoad((options) => {
 		const sys = uni.getSystemInfoSync()
@@ -93,6 +94,10 @@
 		const stageTitleOption = options['stageTitle']
 		if (stageTitleOption != null) {
 			stageTitle.value = decodeOption(stageTitleOption as string)
+		}
+		const returnToFilterOption = options['returnToFilter']
+		if (returnToFilterOption != null) {
+			returnToFilter.value = decodeOption(returnToFilterOption as string) === '1'
 		}
 	})
 
@@ -135,12 +140,24 @@
 	}
 
 	function goBack (): void {
+		if (returnToFilter.value) {
+			uni.navigateBack({
+				delta: 1
+			})
+			return
+		}
 		uni.switchTab({
 			url: '/pages/rehab/rehab'
 		})
 	}
 
 	function goRehabPage (): void {
+		if (returnToFilter.value) {
+			uni.navigateBack({
+				delta: 1
+			})
+			return
+		}
 		uni.switchTab({
 			url: '/pages/rehab/rehab'
 		})

@@ -157,7 +157,7 @@
 		<view v-if="pickerVisible" class="picker-mask" @click="closePicker">
 			<view class="picker-panel" @click.stop>
 				<view class="picker-header">
-					<text class="picker-title">选择康复标签</text>
+					<text class="picker-title">选择康复选项</text>
 					<view class="picker-header-close" @click="closePicker">
 						<text class="picker-header-close-text">关闭</text>
 					</view>
@@ -171,45 +171,39 @@
 								:key="tag.id"
 								class="picker-option"
 								:class="{ 'picker-option-active': pickerLevel1Id === tag.id }"
-								@click="selectPickerLevel1(tag)"
+								@click="selectPickerTag(tag)"
 							>
 								<text>{{ tag.title }}</text>
 							</view>
 						</view>
 					</view>
-					<view v-if="pickerLevel2Tags.length > 0" class="picker-level">
-						<text class="picker-level-title">伤痛部位</text>
-						<view class="picker-options">
-							<view
-								v-for="tag in pickerLevel2Tags"
-								:key="tag.id"
-								class="picker-option"
-								:class="{ 'picker-option-active': pickerLevel2Id === tag.id }"
-								@click="selectPickerLevel2(tag)"
-							>
-								<text>{{ tag.title }}</text>
+					<view v-if="pickerSelectedTagId.length > 0 && pickerDictionariesLoading" class="picker-state">
+						<text class="picker-state-text">正在加载处方字典...</text>
+					</view>
+					<view v-else-if="pickerSelectedTagId.length > 0 && pickerDictionaries.length === 0" class="picker-state">
+						<text class="picker-state-text">该复健类型下暂无处方字典</text>
+					</view>
+					<template v-else>
+						<view v-for="dictionary in pickerDictionaries" :key="dictionary.id" class="picker-level">
+							<text class="picker-level-title">{{ dictionary.name }}</text>
+							<view class="picker-options">
+								<view
+									v-for="item in dictionary.items"
+									:key="item.id"
+									class="picker-option"
+									:class="{ 'picker-option-active': isPickerItemSelected(item.id) }"
+									@click="togglePickerItem(item)"
+								>
+									<text>{{ item.name }}</text>
+								</view>
 							</view>
 						</view>
-					</view>
-					<view v-if="pickerLevel3Tags.length > 0" class="picker-level">
-						<text class="picker-level-title">伤痛类型</text>
-						<view class="picker-options">
-							<view
-								v-for="tag in pickerLevel3Tags"
-								:key="tag.id"
-								class="picker-option"
-								:class="{ 'picker-option-active': pickerSelectedTagId === tag.id }"
-								@click="selectPickerLevel3(tag)"
-							>
-								<text>{{ tag.title }}</text>
-							</view>
-						</view>
-					</view>
+					</template>
 				</scroll-view>
 				<view class="picker-footer">
 					<view class="picker-selected">
-						<text v-if="pickerSelectedTagId.length > 0" class="picker-selected-text">{{ pickerSelectedTagTitle }}</text>
-						<text v-else class="picker-selected-placeholder">请选择标签</text>
+						<text v-if="pickerSelectedItemIds.length > 0" class="picker-selected-text">{{ pickerSelectedSummary() }}</text>
+						<text v-else class="picker-selected-placeholder">请选择</text>
 					</view>
 					<view class="picker-actions">
 						<view class="picker-btn picker-btn-cancel" @click="closePicker">
@@ -234,6 +228,7 @@
 
 <script setup lang="uts">
 	import { hasLocalToken } from '../../common/auth'
+	import { PrescriptionFilterDictionary, PrescriptionFilterItem } from '../../common/prescription-filter'
 	import { get, post } from '../../common/request'
 	import { ForumArticle, PrescriptionTag, formatCount, lastTagName, resolveFileUrl } from '../../common/forum'
 
@@ -256,18 +251,19 @@
 	const presetTagTitles = ref<string[]>(['全部'])
 	const selectedTagId = ref('')
 	const selectedTagTitle = ref('')
+	const selectedFilterItemIds = ref<string[]>([])
 	const customMode = ref(false)
 	const customTagId = ref('')
 	const customTagTitle = ref('')
 
 	const pickerVisible = ref(false)
 	const pickerLevel1Tags = ref<PrescriptionTag[]>([])
-	const pickerLevel2Tags = ref<PrescriptionTag[]>([])
-	const pickerLevel3Tags = ref<PrescriptionTag[]>([])
 	const pickerLevel1Id = ref('')
-	const pickerLevel2Id = ref('')
 	const pickerSelectedTagId = ref('')
 	const pickerSelectedTagTitle = ref('')
+	const pickerDictionaries = ref<PrescriptionFilterDictionary[]>([])
+	const pickerDictionariesLoading = ref(false)
+	const pickerSelectedItemIds = ref<string[]>([])
 
 	const initialLoading = ref(true)
 	const tagsReady = ref(false)
@@ -281,6 +277,7 @@
 	let lastFavoriteTapAt = 0
 	let noticeTimer = -1
 	let pageShown = false
+	let pickerDictionaryRequestVersion = 0
 
 	function checkInitialLoaded (): void {
 		if (tagsReady.value && listReady.value) {
@@ -435,7 +432,16 @@
 		loading.value = true
 		const listPath = hasLocalToken() ? '/forum_article' : '/forum_article/public'
 		let url = listPath + '?pageNo=' + page.value + '&pageSize=' + pageSize.value
-		if (selectedTagId.value.length > 0) {
+		if (selectedFilterItemIds.value.length > 0) {
+			let tagIds = ''
+			for (let i = 0; i < selectedFilterItemIds.value.length; i++) {
+				if (tagIds.length > 0) {
+					tagIds += ','
+				}
+				tagIds += selectedFilterItemIds.value[i]
+			}
+			url += '&tag_ids=' + encodeURIComponent(tagIds)
+		} else if (selectedTagId.value.length > 0) {
 			url += '&tag=' + selectedTagId.value
 		}
 		get(url, (res) => {
@@ -619,6 +625,7 @@
 
 	function selectPresetCategory (index: number): void {
 		customMode.value = false
+		selectedFilterItemIds.value = []
 		selectedTagId.value = presetTagIds.value[index]
 		selectedTagTitle.value = index === 0 ? '' : presetTagTitles.value[index]
 		loadList(true)
@@ -626,53 +633,130 @@
 
 	function openTagPicker (): void {
 		pickerVisible.value = true
+		pickerDictionaryRequestVersion += 1
 		pickerLevel1Id.value = ''
-		pickerLevel2Id.value = ''
 		pickerSelectedTagId.value = ''
 		pickerSelectedTagTitle.value = ''
 		pickerLevel1Tags.value = childrenTags('0', 1)
-		pickerLevel2Tags.value = []
-		pickerLevel3Tags.value = []
+		pickerDictionaries.value = []
+		pickerDictionariesLoading.value = false
+		pickerSelectedItemIds.value = []
 	}
 
 	function closePicker (): void {
 		pickerVisible.value = false
 	}
 
-	function selectPickerLevel1 (tag: PrescriptionTag): void {
+	function selectPickerTag (tag: PrescriptionTag): void {
 		pickerLevel1Id.value = tag.id
-		pickerLevel2Id.value = ''
 		pickerSelectedTagId.value = tag.id
 		pickerSelectedTagTitle.value = tag.title
-		pickerLevel2Tags.value = childrenTags(tag.id, 2)
-		pickerLevel3Tags.value = []
+		pickerSelectedItemIds.value = []
+		pickerDictionaries.value = []
+		loadPickerDictionaries(tag.id)
 	}
 
-	function selectPickerLevel2 (tag: PrescriptionTag): void {
-		pickerLevel2Id.value = tag.id
-		pickerSelectedTagId.value = tag.id
-		pickerSelectedTagTitle.value = tag.title
-		pickerLevel3Tags.value = childrenTags(tag.id, 3)
+	function loadPickerDictionaries (tagId: string): void {
+		pickerDictionaryRequestVersion += 1
+		const version = pickerDictionaryRequestVersion
+		pickerDictionariesLoading.value = true
+		get('/prescription_tag_dictionary/mini_find?prescription_tag_id=' + encodeURIComponent(tagId), (res) => {
+			if (version !== pickerDictionaryRequestVersion) {
+				return
+			}
+			pickerDictionariesLoading.value = false
+			if (res.getNumber('code', 0) !== 200) {
+				return
+			}
+			const items = res.getArray<UTSJSONObject>('data')
+			const parsed: PrescriptionFilterDictionary[] = []
+			if (items != null) {
+				for (let i = 0; i < items.length; i++) {
+					const dictionary = new PrescriptionFilterDictionary()
+					dictionary.initFromJSON(items[i])
+					if (dictionary.items.length > 0) {
+						parsed.push(dictionary)
+					}
+				}
+			}
+			pickerDictionaries.value = parsed
+		}, () => {
+			if (version === pickerDictionaryRequestVersion) {
+				pickerDictionariesLoading.value = false
+			}
+		})
 	}
 
-	function selectPickerLevel3 (tag: PrescriptionTag): void {
-		pickerSelectedTagId.value = tag.id
-		pickerSelectedTagTitle.value = tag.title
+	function isPickerItemSelected (itemId: string): boolean {
+		for (let i = 0; i < pickerSelectedItemIds.value.length; i++) {
+			if (pickerSelectedItemIds.value[i] === itemId) {
+				return true
+			}
+		}
+		return false
+	}
+
+	function togglePickerItem (item: PrescriptionFilterItem): void {
+		const next: string[] = []
+		let found = false
+		for (let i = 0; i < pickerSelectedItemIds.value.length; i++) {
+			const itemId = pickerSelectedItemIds.value[i]
+			if (itemId === item.id) {
+				found = true
+			} else {
+				next.push(itemId)
+			}
+		}
+		if (!found) {
+			next.push(item.id)
+		}
+		pickerSelectedItemIds.value = next
+	}
+
+	function pickerSelectedSummary (): string {
+		let summary = ''
+		let count = 0
+		for (let i = 0; i < pickerDictionaries.value.length; i++) {
+			const dictionary = pickerDictionaries.value[i]
+			for (let j = 0; j < dictionary.items.length; j++) {
+				const item = dictionary.items[j]
+				if (!isPickerItemSelected(item.id)) {
+					continue
+				}
+				count += 1
+				if (count <= 2) {
+					if (summary.length > 0) {
+						summary += '、'
+					}
+					summary += item.name
+				}
+			}
+		}
+		if (count > 2) {
+			summary += ' 等' + count.toString() + '项'
+		}
+		return summary
 	}
 
 	function confirmPicker (): void {
 		if (pickerSelectedTagId.value.length === 0) {
-		showNotice('请选择康复标签')
+			showNotice('请选择复健类型')
+			return
+		}
+		if (pickerSelectedItemIds.value.length === 0) {
+			showNotice('请至少选择一个字典项')
 			return
 		}
 		customMode.value = true
 		customTagId.value = pickerSelectedTagId.value
-		selectedTagTitle.value = pickerSelectedTagTitle.value
-		customTagTitle.value = fullTagTitle(pickerSelectedTagId.value)
-		if (customTagTitle.value.length === 0) {
-			customTagTitle.value = pickerSelectedTagTitle.value
+		selectedFilterItemIds.value = []
+		for (let i = 0; i < pickerSelectedItemIds.value.length; i++) {
+			selectedFilterItemIds.value.push(pickerSelectedItemIds.value[i])
 		}
-		selectedTagId.value = customTagId.value
+		const summary = pickerSelectedSummary()
+		selectedTagId.value = selectedFilterItemIds.value[0]
+		selectedTagTitle.value = summary
+		customTagTitle.value = summary
 		pickerVisible.value = false
 		loadList(true)
 	}
@@ -681,6 +765,7 @@
 		customMode.value = false
 		customTagId.value = ''
 		customTagTitle.value = ''
+		selectedFilterItemIds.value = []
 		selectedTagId.value = ''
 		selectedTagTitle.value = ''
 		loadList(true)
@@ -1024,8 +1109,11 @@
 	}
 
 	.picker-panel {
+		display: flex;
 		width: 88%;
 		max-width: 360px;
+		max-height: 78vh;
+		flex-direction: column;
 		background: #FFFFFF;
 		border-radius: 16px;
 		overflow: hidden;
@@ -1036,6 +1124,7 @@
 		flex-direction: row;
 		align-items: center;
 		justify-content: space-between;
+		flex: 0 0 auto;
 		padding: 16px;
 		border-bottom: 1px solid #F1F2F5;
 	}
@@ -1056,8 +1145,10 @@
 	}
 
 	.picker-scroll {
-		max-height: 430px;
+		min-height: 0;
+		max-height: 56vh;
 		padding: 4px 16px 8px;
+		box-sizing: border-box;
 	}
 
 	.picker-level {
@@ -1077,6 +1168,20 @@
 		flex-direction: row;
 		flex-wrap: wrap;
 		gap: 8px;
+	}
+
+	.picker-state {
+		display: flex;
+		min-height: 96px;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.picker-state-text {
+		font-size: 12px;
+		line-height: 18px;
+		color: #9CA3AF;
+		text-align: center;
 	}
 
 	.picker-option {
@@ -1099,6 +1204,7 @@
 		flex-direction: row;
 		align-items: center;
 		justify-content: space-between;
+		flex: 0 0 auto;
 		padding: 12px 16px;
 		border-top: 1px solid #F1F2F5;
 	}

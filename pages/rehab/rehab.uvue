@@ -150,6 +150,103 @@
 			</view>
 		</view>
 
+		<view
+			v-if="searchFabReady && !prescriptionFilterVisible"
+			class="types-search-fab"
+			:class="{ 'types-search-fab-snap': !searchFabDragging, 'types-search-fab-pressed': searchFabDragging }"
+			:style="{ left: searchFabLeft + 'px', top: searchFabTop + 'px' }"
+			hover-class="none"
+			@click.stop="onTypesSearchTap"
+			@touchstart.stop="onTypesSearchTouchStart"
+			@touchmove.stop.prevent="onTypesSearchTouchMove"
+			@touchend.stop="onTypesSearchTouchEnd"
+			@touchcancel.stop="onTypesSearchTouchCancel"
+		>
+			<image class="types-search-fab-image" src="/static/icons/ic-types-search.svg" mode="aspectFit"></image>
+		</view>
+
+		<view v-if="prescriptionFilterVisible" class="prescription-filter-page">
+			<view class="prescription-filter-status" :style="{ height: statusBarHeight + 'px' }"></view>
+			<view class="prescription-filter-header">
+				<view class="prescription-filter-back" @click="closePrescriptionFilter">
+					<text class="prescription-filter-back-text">‹</text>
+				</view>
+				<text class="prescription-filter-title">分类检索</text>
+			</view>
+
+			<scroll-view class="prescription-filter-scroll" scroll-y>
+					<view class="prescription-filter-content">
+						<view class="prescription-filter-group">
+							<view class="prescription-filter-group-head">
+								<text class="prescription-filter-group-title">复健类型</text>
+								<view class="prescription-filter-reset" @click="resetPrescriptionFilter">
+									<text class="prescription-filter-reset-text">重置</text>
+								</view>
+							</view>
+							<view v-if="prescriptionTagsLoading" class="prescription-filter-state">
+								<text class="prescription-filter-state-text">正在加载标签...</text>
+							</view>
+							<view v-else-if="prescriptionTags.length === 0" class="prescription-filter-state">
+								<text class="prescription-filter-state-text">暂无可选标签</text>
+							</view>
+							<view v-else class="prescription-filter-chips">
+								<view
+									v-for="tag in prescriptionTags"
+									:key="tag.id"
+									class="prescription-filter-chip"
+									:class="{ 'prescription-filter-chip-active': selectedPrescriptionTagId === tag.id }"
+									@click="selectPrescriptionTag(tag)"
+								>
+									<text class="prescription-filter-chip-text" :class="{ 'prescription-filter-chip-text-active': selectedPrescriptionTagId === tag.id }">{{ tag.title }}</text>
+								</view>
+							</view>
+						</view>
+
+					<template v-if="selectedPrescriptionTagId.length > 0">
+						<view v-if="prescriptionDictionariesLoading" class="prescription-filter-state">
+							<text class="prescription-filter-state-text">正在加载处方字典...</text>
+						</view>
+						<view v-else-if="prescriptionDictionaries.length === 0" class="prescription-filter-state">
+							<text class="prescription-filter-state-text">该标签下暂无处方字典</text>
+						</view>
+						<template v-else>
+							<view v-for="dictionary in prescriptionDictionaries" :key="dictionary.id" class="prescription-filter-group">
+								<text class="prescription-filter-group-title">{{ dictionary.name }}</text>
+								<view class="prescription-filter-chips">
+									<view
+										v-for="item in dictionary.items"
+										:key="item.id"
+										class="prescription-filter-chip"
+										:class="{ 'prescription-filter-chip-active': isPrescriptionItemSelected(item.id) }"
+										@click="selectPrescriptionItem(dictionary, item)"
+									>
+										<text class="prescription-filter-chip-text" :class="{ 'prescription-filter-chip-text-active': isPrescriptionItemSelected(item.id) }">{{ item.name }}</text>
+									</view>
+								</view>
+							</view>
+						</template>
+					</template>
+				</view>
+			</scroll-view>
+
+			<view class="prescription-filter-action-bar">
+				<view
+					class="prescription-filter-submit"
+					:class="{ 'prescription-filter-submit-disabled': prescriptionActionDisabled }"
+					@click="confirmPrescriptionFilter"
+				>
+					<text class="prescription-filter-submit-text">{{ prescriptionActionText }}</text>
+				</view>
+				<view
+					class="prescription-filter-search-button"
+					:class="{ 'prescription-filter-search-button-disabled': prescriptionSearchDisabled }"
+					@click="runPrescriptionSearch"
+				>
+					<image class="prescription-filter-search-image" src="/static/icons/ic-types-search-in.svg" mode="aspectFit"></image>
+				</view>
+			</view>
+		</view>
+
 		<view v-if="topicDrawerVisible" class="topic-mask" @click="closeTopicDrawer">
 			<view class="topic-panel" @click.stop>
 				<view class="topic-panel-header">
@@ -194,6 +291,7 @@
 
 <script setup lang="uts">
 	import { hasLocalToken } from '../../common/auth'
+	import { PrescriptionFilterDictionary, PrescriptionFilterItem, PrescriptionFilterTag } from '../../common/prescription-filter'
 	import { RehabChatCourse, RehabChatMessage, RehabChatTopic } from '../../common/rehab-chat'
 	import { del, get, post, postStream } from '../../common/request'
 
@@ -217,16 +315,69 @@
 	const lastScrollAt = ref(0)
 	const scrollTop = ref(0)
 	const scrollIntoView = ref('')
+	const searchFabReady = ref(false)
+	const searchFabDragging = ref(false)
+	const searchFabLeft = ref(0)
+	const searchFabTop = ref(0)
+	const prescriptionFilterVisible = ref(false)
+	const prescriptionTags = ref<PrescriptionFilterTag[]>([])
+	const prescriptionTagsLoading = ref(false)
+	const prescriptionTagsLoaded = ref(false)
+	const selectedPrescriptionTagId = ref('')
+	const selectedPrescriptionTagTitle = ref('')
+	const prescriptionDictionaries = ref<PrescriptionFilterDictionary[]>([])
+	const prescriptionDictionariesLoading = ref(false)
+	const selectedPrescriptionItemIds = ref<string[]>([])
+	const matchedStageCount = ref(0)
+	const matchedStageLoading = ref(false)
+	const prescriptionSearchPerformed = ref(false)
+	const searchedPrescriptionTagId = ref('')
+	const searchedPrescriptionItemIds = ref<string[]>([])
+	const searchedPrescriptionLabels = ref<string[]>([])
 	const quickQuestions = ref<string[]>([
 		'跑步膝痛怎么恢复',
 		'肩颈酸痛怎么缓解',
 		'久坐腰背不适',
 		'术后力量怎么练'
 	])
+	const SEARCH_FAB_SIZE = 52
+	const SEARCH_FAB_EDGE = 16
+	const SEARCH_FAB_INPUT_GAP = 16
+	const INPUT_BAR_HEIGHT = 56
+	let searchFabViewportWidth = 0
+	let searchFabViewportHeight = 0
+	let searchFabMinTop = 0
+	let searchFabMaxTop = 0
+	let searchFabTouchStartX = 0
+	let searchFabTouchStartY = 0
+	let searchFabTouchStartLeft = 0
+	let searchFabTouchStartTop = 0
+	let searchFabTouchMoved = false
+	let dictionaryRequestVersion = 0
+	let matchCountRequestVersion = 0
+	const prescriptionActionText = computed(() => {
+		if (matchedStageLoading.value) {
+			return '正在检索...'
+		}
+		if (!prescriptionSearchPerformed.value) {
+			return '请选择检索条件'
+		}
+		if (matchedStageCount.value === 0) {
+			return '未检索到匹配的方案'
+		}
+		return '查看 ' + matchedStageCount.value.toString() + ' 个匹配方案'
+	})
+	const prescriptionActionDisabled = computed(() => {
+		return matchedStageLoading.value || !prescriptionSearchPerformed.value || matchedStageCount.value === 0
+	})
+	const prescriptionSearchDisabled = computed(() => {
+		return selectedPrescriptionTagId.value.length === 0 || matchedStageLoading.value
+	})
 
 	onLoad(() => {
 		const sys = uni.getSystemInfoSync()
 		statusBarHeight.value = sys.statusBarHeight
+		initSearchFab(sys.windowWidth, sys.windowHeight)
 	})
 
 	onShow(() => {
@@ -365,6 +516,335 @@
 
 	function onMessageInput (event: UniEvent): void {
 		message.value = event.detail.value as string
+	}
+
+	function initSearchFab (viewportWidth: number, viewportHeight: number): void {
+		searchFabViewportWidth = viewportWidth
+		searchFabViewportHeight = viewportHeight
+		searchFabMinTop = statusBarHeight.value + 64
+		searchFabMaxTop = viewportHeight - INPUT_BAR_HEIGHT - SEARCH_FAB_INPUT_GAP - SEARCH_FAB_SIZE
+		searchFabLeft.value = viewportWidth - SEARCH_FAB_EDGE - SEARCH_FAB_SIZE
+		searchFabTop.value = Math.max(searchFabMinTop, searchFabMaxTop)
+		searchFabReady.value = true
+	}
+
+	function onTypesSearchTouchStart (event: UniTouchEvent): void {
+		if (event.touches.length === 0) {
+			return
+		}
+		const touch = event.touches[0]
+		searchFabTouchStartX = touch.clientX
+		searchFabTouchStartY = touch.clientY
+		searchFabTouchStartLeft = searchFabLeft.value
+		searchFabTouchStartTop = searchFabTop.value
+		searchFabTouchMoved = false
+		searchFabDragging.value = true
+	}
+
+	function onTypesSearchTouchMove (event: UniTouchEvent): void {
+		if (!searchFabDragging.value || event.touches.length === 0) {
+			return
+		}
+		const touch = event.touches[0]
+		const deltaX = touch.clientX - searchFabTouchStartX
+		const deltaY = touch.clientY - searchFabTouchStartY
+		if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
+			searchFabTouchMoved = true
+		}
+		searchFabLeft.value = clampSearchFabLeft(searchFabTouchStartLeft + deltaX)
+		searchFabTop.value = clampSearchFabTop(searchFabTouchStartTop + deltaY)
+	}
+
+	function onTypesSearchTouchEnd (): void {
+		if (!searchFabDragging.value) {
+			return
+		}
+		const shouldOpen = !searchFabTouchMoved
+		searchFabDragging.value = false
+		snapSearchFabToEdge()
+		if (shouldOpen) {
+			openPrescriptionFilter()
+		}
+	}
+
+	function onTypesSearchTouchCancel (): void {
+		if (!searchFabDragging.value) {
+			return
+		}
+		searchFabDragging.value = false
+		searchFabTouchMoved = false
+		snapSearchFabToEdge()
+	}
+
+	function snapSearchFabToEdge (): void {
+		const fabCenter = searchFabLeft.value + SEARCH_FAB_SIZE / 2
+		if (fabCenter < searchFabViewportWidth / 2) {
+			searchFabLeft.value = SEARCH_FAB_EDGE
+		} else {
+			searchFabLeft.value = searchFabViewportWidth - SEARCH_FAB_EDGE - SEARCH_FAB_SIZE
+		}
+	}
+
+	function clampSearchFabLeft (value: number): number {
+		const maxLeft = searchFabViewportWidth - SEARCH_FAB_EDGE - SEARCH_FAB_SIZE
+		return Math.max(SEARCH_FAB_EDGE, Math.min(maxLeft, value))
+	}
+
+	function clampSearchFabTop (value: number): number {
+		return Math.max(searchFabMinTop, Math.min(searchFabMaxTop, value))
+	}
+
+	function onTypesSearchTap (): void {
+		if (searchFabTouchMoved) {
+			searchFabTouchMoved = false
+			return
+		}
+		openPrescriptionFilter()
+	}
+
+	function openPrescriptionFilter (): void {
+		prescriptionFilterVisible.value = true
+		if (!prescriptionTagsLoaded.value) {
+			loadPrescriptionTags()
+		}
+	}
+
+	function closePrescriptionFilter (): void {
+		prescriptionFilterVisible.value = false
+	}
+
+	function loadPrescriptionTags (): void {
+		if (prescriptionTagsLoading.value) {
+			return
+		}
+		prescriptionTagsLoading.value = true
+		get('/prescription_tag/mini_find?status=1', (res) => {
+			prescriptionTagsLoading.value = false
+			if (res.getNumber('code', 0) !== 200) {
+				return
+			}
+			const items = res.getArray<UTSJSONObject>('data')
+			const parsed: PrescriptionFilterTag[] = []
+			if (items != null) {
+				for (let i = 0; i < items.length; i++) {
+					const tag = new PrescriptionFilterTag()
+					tag.initFromJSON(items[i])
+					parsed.push(tag)
+				}
+			}
+			prescriptionTags.value = parsed
+			prescriptionTagsLoaded.value = true
+		}, () => {
+			prescriptionTagsLoading.value = false
+		})
+	}
+
+	function selectPrescriptionTag (tag: PrescriptionFilterTag): void {
+		if (selectedPrescriptionTagId.value === tag.id) {
+			return
+		}
+		selectedPrescriptionTagId.value = tag.id
+		selectedPrescriptionTagTitle.value = tag.title
+		selectedPrescriptionItemIds.value = []
+		prescriptionDictionaries.value = []
+		loadPrescriptionDictionaries(tag.id)
+	}
+
+	function loadPrescriptionDictionaries (tagId: string): void {
+		dictionaryRequestVersion += 1
+		const version = dictionaryRequestVersion
+		prescriptionDictionariesLoading.value = true
+		get('/prescription_tag_dictionary/mini_find?prescription_tag_id=' + encodeURIComponent(tagId), (res) => {
+			if (version !== dictionaryRequestVersion) {
+				return
+			}
+			prescriptionDictionariesLoading.value = false
+			if (res.getNumber('code', 0) !== 200) {
+				return
+			}
+			const items = res.getArray<UTSJSONObject>('data')
+			const parsed: PrescriptionFilterDictionary[] = []
+			if (items != null) {
+				for (let i = 0; i < items.length; i++) {
+					const dictionary = new PrescriptionFilterDictionary()
+					dictionary.initFromJSON(items[i])
+					if (dictionary.items.length === 0) {
+						continue
+					}
+					parsed.push(dictionary)
+				}
+			}
+			prescriptionDictionaries.value = parsed
+		}, () => {
+			if (version === dictionaryRequestVersion) {
+				prescriptionDictionariesLoading.value = false
+			}
+		})
+	}
+
+	function isPrescriptionItemSelected (itemId: string): boolean {
+		for (let i = 0; i < selectedPrescriptionItemIds.value.length; i++) {
+			if (selectedPrescriptionItemIds.value[i] === itemId) {
+				return true
+			}
+		}
+		return false
+	}
+
+	function selectPrescriptionItem (dictionary: PrescriptionFilterDictionary, item: PrescriptionFilterItem): void {
+		const alreadySelected = isPrescriptionItemSelected(item.id)
+		const next: string[] = []
+		for (let i = 0; i < prescriptionDictionaries.value.length; i++) {
+			const group = prescriptionDictionaries.value[i]
+			if (group.id === dictionary.id) {
+				continue
+			}
+			for (let j = 0; j < group.items.length; j++) {
+				if (isPrescriptionItemSelected(group.items[j].id)) {
+					next.push(group.items[j].id)
+				}
+			}
+		}
+		if (!alreadySelected) {
+			next.push(item.id)
+		}
+		selectedPrescriptionItemIds.value = next
+	}
+
+	function invalidatePrescriptionSearch (): void {
+		matchCountRequestVersion += 1
+		prescriptionSearchPerformed.value = false
+		matchedStageLoading.value = false
+		matchedStageCount.value = 0
+	}
+
+	function runPrescriptionSearch (): void {
+		if (prescriptionSearchDisabled.value) {
+			if (selectedPrescriptionTagId.value.length === 0) {
+				uni.showToast({
+					title: '请先选择复健类型',
+					icon: 'none'
+				})
+			}
+			return
+		}
+		matchCountRequestVersion += 1
+		const version = matchCountRequestVersion
+		const searchTagId = selectedPrescriptionTagId.value
+		const searchItemIds: string[] = []
+		for (let i = 0; i < selectedPrescriptionItemIds.value.length; i++) {
+			searchItemIds.push(selectedPrescriptionItemIds.value[i])
+		}
+		const searchLabels = buildSelectedPrescriptionLabels()
+		prescriptionSearchPerformed.value = false
+		matchedStageLoading.value = true
+		matchedStageCount.value = 0
+		let url = '/rehab_combination_course/mini_match?prescription_tag_id=' + encodeURIComponent(searchTagId)
+		if (searchItemIds.length > 0) {
+			let itemIds = ''
+			for (let i = 0; i < searchItemIds.length; i++) {
+				if (itemIds.length > 0) {
+					itemIds += ','
+				}
+				itemIds += searchItemIds[i]
+			}
+			url += '&dictionary_item_ids=' + encodeURIComponent(itemIds)
+		}
+		get(url, (res) => {
+			if (version !== matchCountRequestVersion) {
+				return
+			}
+			matchedStageLoading.value = false
+			if (res.getNumber('code', 0) !== 200) {
+				uni.showToast({
+					title: res.getString('message') ?? '检索失败',
+					icon: 'none'
+				})
+				return
+			}
+			const data = res.getJSON('data')
+			matchedStageCount.value = data == null ? 0 : data.getNumber('stage_count', 0)
+			searchedPrescriptionTagId.value = searchTagId
+			searchedPrescriptionItemIds.value = searchItemIds
+			searchedPrescriptionLabels.value = searchLabels
+			prescriptionSearchPerformed.value = true
+		}, () => {
+			if (version === matchCountRequestVersion) {
+				matchedStageLoading.value = false
+				uni.showToast({
+					title: '检索失败，请稍后重试',
+					icon: 'none'
+				})
+			}
+		})
+	}
+
+	function resetPrescriptionFilter (): void {
+		dictionaryRequestVersion += 1
+		selectedPrescriptionTagId.value = ''
+		selectedPrescriptionTagTitle.value = ''
+		prescriptionDictionaries.value = []
+		prescriptionDictionariesLoading.value = false
+		selectedPrescriptionItemIds.value = []
+		searchedPrescriptionTagId.value = ''
+		searchedPrescriptionItemIds.value = []
+		searchedPrescriptionLabels.value = []
+		invalidatePrescriptionSearch()
+	}
+
+	function confirmPrescriptionFilter (): void {
+		if (prescriptionActionDisabled.value) {
+			return
+		}
+		if (!hasLocalToken()) {
+			uni.showModal({
+				title: '请先登录',
+				content: '登录后才能查看匹配方案和课程解锁状态',
+				showCancel: false,
+				success: () => {
+					uni.navigateTo({
+						url: '/pages/login-guide/login-guide'
+					})
+				}
+			})
+			return
+		}
+		let itemIds = ''
+		for (let i = 0; i < searchedPrescriptionItemIds.value.length; i++) {
+			if (itemIds.length > 0) {
+				itemIds += ','
+			}
+			itemIds += searchedPrescriptionItemIds.value[i]
+		}
+		let labels = ''
+		for (let i = 0; i < searchedPrescriptionLabels.value.length; i++) {
+			if (labels.length > 0) {
+				labels += '|'
+			}
+			labels += searchedPrescriptionLabels.value[i]
+		}
+		uni.navigateTo({
+			url: '/pages/prescription-results/prescription-results?prescriptionTagId=' + encodeURIComponent(searchedPrescriptionTagId.value)
+				+ '&dictionaryItemIds=' + encodeURIComponent(itemIds)
+				+ '&labels=' + encodeURIComponent(labels)
+				+ '&count=' + matchedStageCount.value.toString()
+		})
+	}
+
+	function buildSelectedPrescriptionLabels (): string[] {
+		const labels: string[] = []
+		if (selectedPrescriptionTagTitle.value.length > 0) {
+			labels.push(selectedPrescriptionTagTitle.value)
+		}
+		for (let i = 0; i < prescriptionDictionaries.value.length; i++) {
+			const dictionary = prescriptionDictionaries.value[i]
+			for (let j = 0; j < dictionary.items.length; j++) {
+				if (isPrescriptionItemSelected(dictionary.items[j].id)) {
+					labels.push(dictionary.items[j].name)
+				}
+			}
+		}
+		return labels
 	}
 
 	function askQuickQuestion (question: string): void {
@@ -1488,6 +1968,34 @@
 		box-shadow: 0 -2px 8px rgba(17, 18, 19, 0.05);
 	}
 
+	.types-search-fab {
+		position: fixed;
+		z-index: 10;
+		display: flex;
+		width: 52px;
+		height: 52px;
+		align-items: center;
+		justify-content: center;
+		overflow: visible;
+	}
+
+	.types-search-fab-snap {
+		transition: left 0.2s ease, top 0.2s ease;
+	}
+
+	.types-search-fab-pressed {
+		opacity: 0.92;
+		transform: scale(0.96);
+	}
+
+	.types-search-fab-image {
+		position: absolute;
+		left: -14px;
+		top: -14px;
+		width: 80px;
+		height: 86px;
+	}
+
 	.input-box {
 		flex: 1;
 		display: flex;
@@ -1541,6 +2049,497 @@
 		top: -10px;
 		width: 56px;
 		height: 60px;
+	}
+
+	.prescription-filter-page {
+		position: fixed;
+		left: 0;
+		right: 0;
+		top: 0;
+		bottom: 0;
+		z-index: 30;
+		display: flex;
+		flex-direction: column;
+		background: #FFFFFF;
+	}
+
+	.prescription-filter-status {
+		width: 100%;
+		flex: 0 0 auto;
+	}
+
+	.prescription-filter-header {
+		display: flex;
+		height: 48px;
+		flex: 0 0 48px;
+		flex-direction: row;
+		align-items: center;
+		gap: 8px;
+		padding: 0 16px;
+		box-sizing: border-box;
+		background: #FFFFFF;
+	}
+
+	.prescription-filter-back {
+		display: flex;
+		width: 28px;
+		height: 28px;
+		flex: 0 0 28px;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.prescription-filter-back-text {
+		margin-top: -2px;
+		font-size: 28px;
+		line-height: 30px;
+		color: #1A1D24;
+	}
+
+	.prescription-filter-title {
+		font-size: 17px;
+		font-weight: 600;
+		line-height: 24px;
+		color: #1A1D24;
+	}
+
+	.prescription-filter-header-space {
+		flex: 1;
+	}
+
+	.prescription-filter-reset {
+		display: flex;
+		height: 32px;
+		align-items: center;
+		justify-content: center;
+		padding: 0 4px;
+	}
+
+	.prescription-filter-reset-text {
+		font-size: 13px;
+		line-height: 20px;
+		color: #FF6B35;
+	}
+
+	.prescription-filter-scroll {
+		min-height: 0;
+		flex: 1;
+		height: 0;
+		background: #FFFFFF;
+	}
+
+	.prescription-filter-content {
+		display: flex;
+		flex-direction: column;
+		gap: 20px;
+		padding: 8px 16px 24px;
+		box-sizing: border-box;
+	}
+
+	.prescription-filter-group {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.prescription-filter-group-head {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+	}
+
+	.prescription-filter-group-title {
+		font-size: 13px;
+		font-weight: 600;
+		line-height: 18px;
+		color: #1A1D24;
+	}
+
+	.prescription-filter-chips {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
+	.prescription-filter-chip {
+		display: flex;
+		height: 33px;
+		align-items: center;
+		justify-content: center;
+		padding: 0 14px;
+		border: 1px solid #EDEFF2;
+		border-radius: 999px;
+		background: #FFFFFF;
+		box-sizing: border-box;
+	}
+
+	.prescription-filter-chip-active {
+		border-color: #FF6B35;
+		background: #FFF0E8;
+	}
+
+	.prescription-filter-chip-text {
+		font-size: 13px;
+		font-weight: 400;
+		line-height: 18px;
+		color: #1A1D24;
+	}
+
+	.prescription-filter-chip-text-active {
+		font-weight: 600;
+		color: #FF6B35;
+	}
+
+	.prescription-filter-state {
+		display: flex;
+		min-height: 80px;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.prescription-filter-state-text {
+		font-size: 12px;
+		line-height: 18px;
+		color: #9CA3AF;
+		text-align: center;
+	}
+
+	.prescription-filter-action-bar {
+		display: flex;
+		height: 56px;
+		flex: 0 0 56px;
+		flex-direction: row;
+		align-items: center;
+		gap: 10px;
+		padding: 0 16px;
+		box-sizing: border-box;
+		background: #FFFFFF;
+		box-shadow: 0 -2px 8px rgba(23, 26, 36, 0.05);
+	}
+
+	.prescription-filter-submit {
+		display: flex;
+		height: 40px;
+		flex: 1;
+		align-items: center;
+		justify-content: center;
+		border-radius: 999px;
+		background-image: linear-gradient(135deg, #FF8A3D 0%, #FF5224 100%);
+		box-shadow: 0 6px 14px rgba(255, 82, 36, 0.35);
+	}
+
+	.prescription-filter-submit-disabled {
+		opacity: 0.45;
+	}
+
+	.prescription-filter-submit-text {
+		font-size: 14px;
+		font-weight: 600;
+		line-height: 20px;
+		color: #FFFFFF;
+	}
+
+	.prescription-filter-search-button {
+		position: relative;
+		display: flex;
+		width: 40px;
+		height: 40px;
+		flex: 0 0 40px;
+		align-items: center;
+		justify-content: center;
+		overflow: visible;
+	}
+
+	.prescription-filter-search-button-disabled {
+		opacity: 0.45;
+	}
+
+	.prescription-filter-search-image {
+		position: absolute;
+		left: -14px;
+		top: -14px;
+		width: 68px;
+		height: 74px;
+	}
+
+	.prescription-results-page {
+		position: fixed;
+		left: 0;
+		right: 0;
+		top: 0;
+		bottom: 0;
+		z-index: 31;
+		display: flex;
+		flex-direction: column;
+		background: #FFFFFF;
+	}
+
+	.prescription-results-selected {
+		display: flex;
+		flex: 0 0 auto;
+		flex-direction: row;
+		align-items: flex-start;
+		gap: 8px;
+		padding: 0 16px 10px;
+		box-sizing: border-box;
+	}
+
+	.prescription-results-selected-label {
+		flex: 0 0 auto;
+		margin-top: 5px;
+		font-size: 12px;
+		line-height: 18px;
+		color: #6B7280;
+	}
+
+	.prescription-results-selected-chips {
+		display: flex;
+		min-width: 0;
+		flex: 1;
+		flex-direction: row;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
+	.prescription-results-selected-chip {
+		display: flex;
+		height: 28px;
+		align-items: center;
+		justify-content: center;
+		padding: 0 10px;
+		border-radius: 999px;
+		background: #FFF3EC;
+		box-sizing: border-box;
+	}
+
+	.prescription-results-selected-chip-text {
+		font-size: 11px;
+		font-weight: 500;
+		line-height: 16px;
+		color: #FF6B35;
+	}
+
+	.prescription-results-scroll {
+		min-height: 0;
+		flex: 1;
+		height: 0;
+		background: #FFFFFF;
+	}
+
+	.prescription-results-content {
+		padding: 0 16px 24px;
+		box-sizing: border-box;
+	}
+
+	.prescription-results-list {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.prescription-result-card {
+		position: relative;
+		display: flex;
+		min-height: 96px;
+		flex-direction: row;
+		align-items: center;
+		gap: 12px;
+		padding: 12px;
+		border: 1px solid #EEF0F3;
+		border-radius: 14px;
+		background: #FFFFFF;
+		box-sizing: border-box;
+		box-shadow: 0 4px 16px rgba(23, 26, 36, 0.04);
+	}
+
+	.prescription-result-cover {
+		display: flex;
+		width: 96px;
+		height: 72px;
+		flex: 0 0 96px;
+		align-items: center;
+		justify-content: center;
+		border-radius: 10px;
+		background: #FFF3EC;
+	}
+
+	.prescription-result-cover-icon {
+		width: 44px;
+		height: 44px;
+	}
+
+	.prescription-result-info {
+		display: flex;
+		min-width: 0;
+		flex: 1;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.prescription-result-title {
+		overflow: hidden;
+		font-size: 14px;
+		font-weight: 600;
+		line-height: 20px;
+		color: #1A1D24;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.prescription-result-tags {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
+	.prescription-result-tag {
+		display: flex;
+		height: 20px;
+		align-items: center;
+		justify-content: center;
+		padding: 0 8px;
+		border-radius: 999px;
+		background: #FFF7F2;
+		box-sizing: border-box;
+	}
+
+	.prescription-result-tag-text {
+		font-size: 10px;
+		line-height: 14px;
+		color: #FF6B35;
+	}
+
+	.prescription-result-description {
+		overflow: hidden;
+		font-size: 11px;
+		line-height: 16px;
+		color: #6B7280;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.prescription-result-meta {
+		overflow: hidden;
+		font-size: 11px;
+		line-height: 16px;
+		color: #9CA3AF;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.prescription-result-lock-mask {
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: 0;
+		bottom: 0;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 10px;
+		padding: 12px;
+		border-radius: 14px;
+		background: rgba(255, 255, 255, 0.96);
+		box-sizing: border-box;
+	}
+
+	.prescription-result-lock-badge {
+		position: relative;
+		width: 36px;
+		height: 36px;
+		flex: 0 0 36px;
+		border-radius: 18px;
+		background: #FFF3EC;
+	}
+
+	.prescription-result-lock-ring {
+		position: absolute;
+		left: 12px;
+		top: 8px;
+		width: 12px;
+		height: 11px;
+		border: 2px solid #FF6B35;
+		border-radius: 6px 6px 3px 3px;
+		box-sizing: border-box;
+	}
+
+	.prescription-result-lock-body {
+		position: absolute;
+		left: 10px;
+		top: 16px;
+		width: 16px;
+		height: 12px;
+		border-radius: 3px;
+		background: #FF6B35;
+	}
+
+	.prescription-result-lock-hole {
+		position: absolute;
+		left: 6px;
+		top: 3px;
+		width: 4px;
+		height: 5px;
+		border-radius: 2px;
+		background: #FFFFFF;
+	}
+
+	.prescription-result-lock-copy {
+		display: flex;
+		min-width: 0;
+		flex: 1;
+		flex-direction: column;
+		gap: 3px;
+	}
+
+	.prescription-result-lock-title {
+		font-size: 13px;
+		font-weight: 600;
+		line-height: 18px;
+		color: #1A1D24;
+	}
+
+	.prescription-result-lock-subtitle {
+		overflow: hidden;
+		font-size: 11px;
+		line-height: 16px;
+		color: #9CA3AF;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.prescription-result-unlock-button {
+		display: flex;
+		height: 30px;
+		flex: 0 0 auto;
+		align-items: center;
+		justify-content: center;
+		padding: 0 14px;
+		border-radius: 999px;
+		background-image: linear-gradient(135deg, #FF8A3D 0%, #FF5124 100%);
+	}
+
+	.prescription-result-unlock-text {
+		font-size: 12px;
+		font-weight: 600;
+		color: #FFFFFF;
+	}
+
+	.prescription-results-state {
+		display: flex;
+		min-height: 180px;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.prescription-results-state-text {
+		font-size: 12px;
+		line-height: 18px;
+		color: #9CA3AF;
+		text-align: center;
 	}
 
 	.topic-mask {

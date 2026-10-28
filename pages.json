@@ -82,6 +82,14 @@
 			}
 		},
 		{
+			"path": "pages/prescription-results/prescription-results",
+			"style": {
+				"navigationBarTitleText": "匹配方案",
+				"navigationStyle": "custom",
+				"backgroundColor": "#FFFFFF"
+			}
+		},
+		{
 			"path": "pages/profile/profile",
 			"style": {
 				"navigationBarTitleText": "个人资料",

@@ -1,0 +1,539 @@
+<template>
+	<view class="page">
+		<view class="page-status" :style="{ height: statusBarHeight + 'px' }"></view>
+		<view class="nav-row">
+			<view class="back-button" @click="goBack">
+				<text class="back-glyph">‹</text>
+			</view>
+			<text class="nav-title">匹配方案 · {{ resultCount }}</text>
+		</view>
+
+		<view class="selected-row">
+			<text class="selected-label">已选：</text>
+			<view class="selected-chips">
+				<view v-for="(label, index) in selectedLabels" :key="label.text + '-' + index" class="selected-chip">
+					<text class="selected-chip-text">{{ label.text }}</text>
+				</view>
+			</view>
+		</view>
+
+		<scroll-view class="result-scroll" scroll-y>
+			<view class="result-content">
+				<view v-if="loading" class="state-box">
+					<text class="state-text">正在加载匹配方案...</text>
+				</view>
+				<view v-else-if="loadFailed" class="state-box" @click="loadResults">
+					<text class="state-text">{{ failMessage }}，点击重试</text>
+				</view>
+				<view v-else-if="list.length === 0" class="state-box">
+					<text class="state-text">暂无匹配方案</text>
+				</view>
+				<view v-else class="result-list">
+					<view
+						v-for="item in list"
+						:key="item.courseId + '-' + item.stageId"
+						class="result-card"
+						@click="openCourse(item)"
+					>
+						<view class="result-cover">
+							<image class="result-cover-icon" src="/static/icons/ic-heart-beat.svg" mode="aspectFit"></image>
+						</view>
+						<view class="result-info">
+							<text class="result-title">{{ item.courseTitle }}</text>
+							<view class="result-tags">
+								<view v-for="(tagName, index) in resultTagNames(item)" :key="tagName.text + '-' + index" class="result-tag">
+									<text class="result-tag-text">{{ tagName.text }}</text>
+								</view>
+							</view>
+							<text v-if="item.unlocked && resultDescription(item).length > 0" class="result-description">{{ resultDescription(item) }}</text>
+							<text class="result-meta">{{ item.stageCount }} 阶段 · {{ item.stageTitle }} · {{ item.unlocked ? '已解锁' : '待解锁' }}</text>
+						</view>
+
+						<view v-if="!item.unlocked" class="lock-mask">
+							<view class="lock-badge">
+								<view class="lock-ring"></view>
+								<view class="lock-body"><view class="lock-hole"></view></view>
+							</view>
+							<view class="lock-copy">
+								<text class="lock-title">{{ item.stageTitle }}</text>
+								<text class="lock-subtitle">待解锁 · 完整阶段安排 · 动作图文详解</text>
+							</view>
+							<view class="unlock-button" @click.stop="openCourse(item)">
+								<text class="unlock-button-text">¥{{ item.price }} 解锁</text>
+							</view>
+						</view>
+					</view>
+				</view>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { hasLocalToken } from '../../common/auth'
+	import { PrescriptionFilterLabel, PrescriptionFilterResult } from '../../common/prescription-filter'
+	import { get } from '../../common/request'
+
+	const statusBarHeight = ref(24)
+	const prescriptionTagId = ref('')
+	const dictionaryItemIds = ref('')
+	const resultCount = ref(0)
+	const selectedLabels = ref<PrescriptionFilterLabel[]>([])
+	const list = ref<PrescriptionFilterResult[]>([])
+	const loading = ref(true)
+	const loadFailed = ref(false)
+	const failMessage = ref('匹配方案加载失败')
+	let pageShown = false
+	let requestVersion = 0
+
+	onLoad((options) => {
+		const sys = uni.getSystemInfoSync()
+		statusBarHeight.value = sys.statusBarHeight
+		const tagIdOption = options['prescriptionTagId']
+		if (tagIdOption != null) {
+			prescriptionTagId.value = decodeOption(tagIdOption as string)
+		}
+		const itemIdsOption = options['dictionaryItemIds']
+		if (itemIdsOption != null) {
+			dictionaryItemIds.value = decodeOption(itemIdsOption as string)
+		}
+		const countOption = options['count']
+		if (countOption != null) {
+			resultCount.value = Number(decodeOption(countOption as string))
+		}
+		const labelsOption = options['labels']
+		if (labelsOption != null) {
+			const labelsText = decodeOption(labelsOption as string)
+			if (labelsText.length > 0) {
+				const labelTexts = labelsText.split('|')
+				const parsedLabels: PrescriptionFilterLabel[] = []
+				for (let i = 0; i < labelTexts.length; i++) {
+					const label = new PrescriptionFilterLabel()
+					label.text = labelTexts[i]
+					parsedLabels.push(label)
+				}
+				selectedLabels.value = parsedLabels
+			}
+		}
+		loadResults()
+	})
+
+	onShow(() => {
+		if (!pageShown) {
+			pageShown = true
+			return
+		}
+		loadResults()
+	})
+
+	function decodeOption (value: string): string {
+		try {
+			return decodeURIComponent(value)
+		} catch (error) {
+			return value
+		}
+	}
+
+	function loadResults (): void {
+		if (!hasLocalToken() || prescriptionTagId.value.length === 0) {
+			loading.value = false
+			loadFailed.value = true
+			failMessage.value = '请先登录后查看匹配方案'
+			return
+		}
+		requestVersion += 1
+		const version = requestVersion
+		loading.value = true
+		loadFailed.value = false
+		let url = '/rehab_combination_course/mini_results?prescription_tag_id=' + encodeURIComponent(prescriptionTagId.value)
+		if (dictionaryItemIds.value.length > 0) {
+			url += '&dictionary_item_ids=' + encodeURIComponent(dictionaryItemIds.value)
+		}
+		get(url, (res) => {
+			if (version !== requestVersion) {
+				return
+			}
+			loading.value = false
+			if (res.getNumber('code', 0) !== 200) {
+				loadFailed.value = true
+				failMessage.value = res.getString('message') ?? '匹配方案加载失败'
+				return
+			}
+			const data = res.getJSON('data')
+			const items = data == null ? null : data.getArray<UTSJSONObject>('data')
+			const parsed: PrescriptionFilterResult[] = []
+			if (items != null) {
+				for (let i = 0; i < items.length; i++) {
+					const item = new PrescriptionFilterResult()
+					item.initFromJSON(items[i])
+					parsed.push(item)
+				}
+			}
+			list.value = parsed
+		}, (message) => {
+			if (version !== requestVersion) {
+				return
+			}
+			loading.value = false
+			loadFailed.value = true
+			failMessage.value = message
+		})
+	}
+
+	function resultTagNames (item: PrescriptionFilterResult): PrescriptionFilterLabel[] {
+		const names: PrescriptionFilterLabel[] = []
+		if (item.tagName.length > 0) {
+			const tag = new PrescriptionFilterLabel()
+			tag.text = item.tagName
+			names.push(tag)
+		}
+		for (let i = 0; i < item.dictionaryNames.length && names.length < 3; i++) {
+			if (item.dictionaryNames[i].length > 0) {
+				const dictionary = new PrescriptionFilterLabel()
+				dictionary.text = item.dictionaryNames[i]
+				names.push(dictionary)
+			}
+		}
+		return names
+	}
+
+	function resultDescription (item: PrescriptionFilterResult): string {
+		if (item.courseRemark.length > 0) {
+			return item.courseRemark
+		}
+		return item.stageRemark
+	}
+
+	function openCourse (item: PrescriptionFilterResult): void {
+		if (item.unlocked) {
+			uni.navigateTo({
+				url: '/pages/rehab-plan/rehab-plan?stageId=' + encodeURIComponent(item.stageId)
+					+ '&courseTitle=' + encodeURIComponent(item.courseTitle)
+			})
+			return
+		}
+		uni.navigateTo({
+			url: '/pages/rehab-unlock/rehab-unlock?courseId=' + encodeURIComponent(item.courseId)
+				+ '&stageId=' + encodeURIComponent(item.stageId)
+				+ '&returnToFilter=1'
+		})
+	}
+
+	function goBack (): void {
+		uni.navigateBack()
+	}
+</script>
+
+<style lang="scss">
+	.page {
+		display: flex;
+		height: 100vh;
+		flex-direction: column;
+		overflow: hidden;
+		background: #FFFFFF;
+	}
+
+	.page-status {
+		width: 100%;
+		flex: 0 0 auto;
+	}
+
+	.nav-row {
+		display: flex;
+		height: 48px;
+		flex: 0 0 48px;
+		flex-direction: row;
+		align-items: center;
+		gap: 8px;
+		padding: 0 16px;
+		box-sizing: border-box;
+		background: #FFFFFF;
+	}
+
+	.back-button {
+		display: flex;
+		width: 28px;
+		height: 28px;
+		flex: 0 0 28px;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.back-glyph {
+		margin-top: -2px;
+		font-size: 28px;
+		line-height: 30px;
+		color: #1A1D24;
+	}
+
+	.nav-title {
+		font-size: 17px;
+		font-weight: 600;
+		line-height: 24px;
+		color: #1A1D24;
+	}
+
+	.selected-row {
+		display: flex;
+		flex: 0 0 auto;
+		flex-direction: row;
+		align-items: flex-start;
+		gap: 8px;
+		padding: 0 16px 10px;
+		box-sizing: border-box;
+	}
+
+	.selected-label {
+		flex: 0 0 auto;
+		margin-top: 5px;
+		font-size: 12px;
+		line-height: 18px;
+		color: #6B7280;
+	}
+
+	.selected-chips {
+		display: flex;
+		min-width: 0;
+		flex: 1;
+		flex-direction: row;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
+	.selected-chip {
+		display: flex;
+		height: 28px;
+		align-items: center;
+		justify-content: center;
+		padding: 0 10px;
+		border-radius: 999px;
+		background: #FFF3EC;
+		box-sizing: border-box;
+	}
+
+	.selected-chip-text {
+		font-size: 11px;
+		font-weight: 500;
+		line-height: 16px;
+		color: #FF6B35;
+	}
+
+	.result-scroll {
+		min-height: 0;
+		flex: 1;
+		height: 0;
+	}
+
+	.result-content {
+		padding: 0 16px 24px;
+		box-sizing: border-box;
+	}
+
+	.result-list {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.result-card {
+		position: relative;
+		display: flex;
+		min-height: 96px;
+		flex-direction: row;
+		align-items: center;
+		gap: 12px;
+		padding: 12px;
+		border: 1px solid #EEF0F3;
+		border-radius: 14px;
+		background: #FFFFFF;
+		box-sizing: border-box;
+		box-shadow: 0 4px 16px rgba(23, 26, 36, 0.04);
+	}
+
+	.result-cover {
+		display: flex;
+		width: 96px;
+		height: 72px;
+		flex: 0 0 96px;
+		align-items: center;
+		justify-content: center;
+		border-radius: 10px;
+		background: #FFF3EC;
+	}
+
+	.result-cover-icon {
+		width: 44px;
+		height: 44px;
+	}
+
+	.result-info {
+		display: flex;
+		min-width: 0;
+		flex: 1;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.result-title {
+		overflow: hidden;
+		font-size: 14px;
+		font-weight: 600;
+		line-height: 20px;
+		color: #1A1D24;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.result-tags {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
+	.result-tag {
+		display: flex;
+		height: 20px;
+		align-items: center;
+		justify-content: center;
+		padding: 0 8px;
+		border-radius: 999px;
+		background: #FFF7F2;
+		box-sizing: border-box;
+	}
+
+	.result-tag-text {
+		font-size: 10px;
+		line-height: 14px;
+		color: #FF6B35;
+	}
+
+	.result-description {
+		overflow: hidden;
+		font-size: 11px;
+		line-height: 16px;
+		color: #6B7280;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.result-meta {
+		overflow: hidden;
+		font-size: 11px;
+		line-height: 16px;
+		color: #9CA3AF;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.lock-mask {
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: 0;
+		bottom: 0;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 10px;
+		padding: 12px;
+		border-radius: 14px;
+		background: rgba(255, 255, 255, 0.96);
+		box-sizing: border-box;
+	}
+
+	.lock-badge {
+		position: relative;
+		width: 36px;
+		height: 36px;
+		flex: 0 0 36px;
+		border-radius: 18px;
+		background: #FFF3EC;
+	}
+
+	.lock-ring {
+		position: absolute;
+		left: 12px;
+		top: 8px;
+		width: 12px;
+		height: 11px;
+		border: 2px solid #FF6B35;
+		border-radius: 6px 6px 3px 3px;
+		box-sizing: border-box;
+	}
+
+	.lock-body {
+		position: absolute;
+		left: 10px;
+		top: 16px;
+		width: 16px;
+		height: 12px;
+		border-radius: 3px;
+		background: #FF6B35;
+	}
+
+	.lock-hole {
+		position: absolute;
+		left: 6px;
+		top: 3px;
+		width: 4px;
+		height: 5px;
+		border-radius: 2px;
+		background: #FFFFFF;
+	}
+
+	.lock-copy {
+		display: flex;
+		min-width: 0;
+		flex: 1;
+		flex-direction: column;
+		gap: 3px;
+	}
+
+	.lock-title {
+		font-size: 13px;
+		font-weight: 600;
+		line-height: 18px;
+		color: #1A1D24;
+	}
+
+	.lock-subtitle {
+		overflow: hidden;
+		font-size: 11px;
+		line-height: 16px;
+		color: #9CA3AF;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.unlock-button {
+		display: flex;
+		height: 30px;
+		flex: 0 0 auto;
+		align-items: center;
+		justify-content: center;
+		padding: 0 14px;
+		border-radius: 999px;
+		background-image: linear-gradient(135deg, #FF8A3D 0%, #FF5124 100%);
+	}
+
+	.unlock-button-text {
+		font-size: 12px;
+		font-weight: 600;
+		color: #FFFFFF;
+	}
+
+	.state-box {
+		display: flex;
+		min-height: 180px;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.state-text {
+		font-size: 12px;
+		line-height: 18px;
+		color: #9CA3AF;
+		text-align: center;
+	}
+</style>

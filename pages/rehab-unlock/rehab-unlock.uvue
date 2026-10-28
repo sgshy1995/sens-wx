@@ -76,6 +76,7 @@
 	const paymentType = ref(0)
 	const loading = ref(true)
 	const paying = ref(false)
+	const returnToFilter = ref(false)
 
 	onLoad((options) => {
 		const sys = uni.getSystemInfoSync()
@@ -87,6 +88,10 @@
 		const stageIdOption = options['stageId']
 		if (stageIdOption != null) {
 			stageId.value = stageIdOption as string
+		}
+		const returnToFilterOption = options['returnToFilter']
+		if (returnToFilterOption != null) {
+			returnToFilter.value = (returnToFilterOption as string) === '1'
 		}
 		loadUnlockInfo()
 	})
@@ -183,6 +188,7 @@
 					+ '&paymentTypeText=' + encodeURIComponent(paymentTypeText)
 					+ '&courseTitle=' + encodeURIComponent(resultCourseTitle)
 					+ '&stageTitle=' + encodeURIComponent(resultStageTitle)
+					+ (returnToFilter.value ? '&returnToFilter=1' : '')
 			})
 		}, (msg) => {
 			finishPay()

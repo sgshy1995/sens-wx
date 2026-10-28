@@ -43,13 +43,13 @@
 			</view>
 
 			<view v-if="loggedIn" class="account-card">
-				<view class="account-section balance-section">
+				<view class="account-section balance-section" @click="goBalanceDetail">
 					<view class="account-head">
 						<image class="account-icon" src="/static/icons/ic-credit.svg" mode="aspectFit"></image>
 						<text class="account-label">余额</text>
 					</view>
 					<text class="account-value">¥ {{ balanceText }}</text>
-					<button class="recharge-button" hover-class="none" @click="goRecharge">
+					<button class="recharge-button" hover-class="none" @click.stop="goRecharge">
 						<text class="recharge-button-text">充值</text>
 					</button>
 				</view>
@@ -306,6 +306,12 @@
 	function goRecharge (): void {
 		uni.navigateTo({
 			url: '/pages/recharge/recharge'
+		})
+	}
+
+	function goBalanceDetail (): void {
+		uni.navigateTo({
+			url: '/pages/balance-detail/balance-detail'
 		})
 	}
 
