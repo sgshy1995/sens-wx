@@ -1,0 +1,715 @@
+<template>
+	<view class="page">
+		<view class="hero">
+			<view class="status-space" :style="{ height: statusBarHeight + 'px' }"></view>
+			<view class="nav-row">
+				<view class="back-button" @click="goBack">
+					<text class="back-glyph">‹</text>
+				</view>
+				<text class="nav-title">收藏/点赞</text>
+				<view class="nav-placeholder"></view>
+			</view>
+		</view>
+
+		<scroll-view class="content-scroll" scroll-y :lower-threshold="120" @scrolltolower="loadMore">
+			<view class="content">
+				<view class="toolbar">
+					<view class="tab-list">
+						<view class="tab" :class="{ 'tab-active': selectedType === 'favorite' }" @click="selectType('favorite')">
+							<text class="tab-text" :class="{ 'tab-text-active': selectedType === 'favorite' }">收藏 {{ favoriteCount }}</text>
+						</view>
+						<view class="tab" :class="{ 'tab-active': selectedType === 'like' }" @click="selectType('like')">
+							<text class="tab-text" :class="{ 'tab-text-active': selectedType === 'like' }">点赞 {{ likeCount }}</text>
+						</view>
+					</view>
+					<view class="manage-button" :class="{ 'manage-button-active': managing }" @click="toggleManaging">
+						<text class="manage-text" :class="{ 'manage-text-active': managing }">管理</text>
+					</view>
+				</view>
+
+				<view v-if="loading && list.length === 0" class="state-card">
+					<text class="state-text">正在加载...</text>
+				</view>
+				<view v-else-if="loadFailed && list.length === 0" class="state-card" @click="loadList(true)">
+					<text class="state-text">{{ failMessage }}，点击重试</text>
+				</view>
+				<view v-else-if="list.length === 0" class="empty-card">
+					<image class="empty-icon" src="/static/icons/ic-empty.svg" mode="aspectFit"></image>
+					<text class="empty-title">{{ selectedType === 'favorite' ? '还没有收藏的文章' : '还没有点赞的文章' }}</text>
+					<text class="empty-description">在论坛中遇到感兴趣的内容，可以在这里快速找到</text>
+					<view class="empty-action" @click="goForum">
+						<text class="empty-action-text">去论坛看看</text>
+					</view>
+				</view>
+
+				<view v-else class="article-list">
+					<view v-for="item in list" :key="item.id" class="article-row">
+						<view v-if="managing" class="remove-button" @click.stop="confirmRemove(item)">
+							<view class="remove-circle">
+								<view class="remove-line"></view>
+							</view>
+						</view>
+						<view class="article-card" @click="openArticle(item)">
+							<view class="author-row">
+								<view class="author-info">
+									<image v-if="item.avatar" class="author-avatar" :src="resolveFileUrl(item.avatar)" mode="aspectFill"></image>
+									<view v-else class="author-avatar author-avatar-empty">
+										<text>{{ authorInitial(item) }}</text>
+									</view>
+									<text class="author-name">{{ item.name || '康复用户' }}</text>
+								</view>
+								<text class="author-time">{{ item.timeText }}</text>
+							</view>
+
+							<view v-if="item.cover" class="content-row">
+								<view class="content-copy">
+									<text class="article-title">{{ item.title }}</text>
+									<text class="article-summary">{{ item.summary }}</text>
+								</view>
+								<image class="article-cover" :src="resolveFileUrl(item.cover)" mode="aspectFill"></image>
+							</view>
+							<view v-else class="content-copy">
+								<text class="article-title">{{ item.title }}</text>
+								<text class="article-summary">{{ item.summary }}</text>
+							</view>
+						</view>
+					</view>
+				</view>
+
+				<view v-if="list.length > 0 && loading" class="list-status">
+					<text class="list-status-text">加载中...</text>
+				</view>
+				<view v-else-if="list.length > 0 && finished" class="list-status">
+					<text class="list-status-text">已经到底了</text>
+				</view>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { hasLocalToken } from '../../common/auth'
+	import { ForumArticle, resolveFileUrl } from '../../common/forum'
+	import { get, post } from '../../common/request'
+
+	const statusBarHeight = ref(24)
+	const selectedType = ref('favorite')
+	const list = ref<ForumArticle[]>([])
+	const pageNo = ref(1)
+	const pageSize = ref(10)
+	const favoriteCount = ref(0)
+	const likeCount = ref(0)
+	const loading = ref(false)
+	const finished = ref(false)
+	const loadFailed = ref(false)
+	const failMessage = ref('加载失败')
+	const managing = ref(false)
+	const removingId = ref('')
+	let requestVersion = 0
+	let pageShown = false
+
+	onLoad((options) => {
+		const sys = uni.getSystemInfoSync()
+		statusBarHeight.value = sys.statusBarHeight
+		const type = options['type']
+		if (type != null && type === 'like') {
+			selectedType.value = 'like'
+		}
+		if (!hasLocalToken()) {
+			openLoginGuide()
+			return
+		}
+		loadCounts()
+		loadList(true)
+	})
+
+	onShow(() => {
+		if (!pageShown) {
+			pageShown = true
+			return
+		}
+		if (!hasLocalToken()) {
+			return
+		}
+		loadCounts()
+		loadList(true)
+	})
+
+	function selectType (type: string): void {
+		if (selectedType.value === type) {
+			return
+		}
+		selectedType.value = type
+		managing.value = false
+		list.value = []
+		loadList(true)
+	}
+
+	function toggleManaging (): void {
+		managing.value = !managing.value
+	}
+
+	function loadCounts (): void {
+		get('/forum_favorite/count', (res) => {
+			const data = res.getJSON('data')
+			if (res.getNumber('code', 0) === 200 && data != null) {
+				favoriteCount.value = data.getNumber('count', 0)
+			}
+		}, () => {})
+		get('/forum_like/count', (res) => {
+			const data = res.getJSON('data')
+			if (res.getNumber('code', 0) === 200 && data != null) {
+				likeCount.value = data.getNumber('count', 0)
+			}
+		}, () => {})
+	}
+
+	function loadList (reset: boolean): void {
+		if ((!reset && (loading.value || finished.value)) || !hasLocalToken()) {
+			return
+		}
+		if (reset) {
+			pageNo.value = 1
+			finished.value = false
+			loadFailed.value = false
+		}
+		requestVersion += 1
+		const version = requestVersion
+		const requestType = selectedType.value
+		const currentPage = pageNo.value
+		loading.value = true
+		const url = '/forum_article/mine?type=' + requestType
+			+ '&pageNo=' + currentPage + '&pageSize=' + pageSize.value
+		get(url, (res) => {
+			if (version !== requestVersion) {
+				return
+			}
+			loading.value = false
+			if (res.getNumber('code', 0) !== 200) {
+				loadFailed.value = true
+				failMessage.value = res.getString('message') ?? '加载失败'
+				return
+			}
+			const body = res.getJSON('data')
+			if (body == null) {
+				loadFailed.value = true
+				failMessage.value = '列表数据为空'
+				return
+			}
+			const items = body.getArray<UTSJSONObject>('data')
+			const parsed: ForumArticle[] = []
+			if (items != null) {
+				for (let i = 0; i < items.length; i++) {
+					const item = new ForumArticle()
+					item.initFromJSON(items[i])
+					parsed.push(item)
+				}
+			}
+			if (reset) {
+				list.value = parsed
+			} else {
+				for (let i = 0; i < parsed.length; i++) {
+					list.value.push(parsed[i])
+				}
+			}
+			const totalCount = body.getNumber('totalCount', 0)
+			if (requestType === 'favorite') {
+				favoriteCount.value = totalCount
+			} else {
+				likeCount.value = totalCount
+			}
+			if (list.value.length >= totalCount || (items != null && items.length < pageSize.value)) {
+				finished.value = true
+			} else {
+				pageNo.value += 1
+			}
+		}, (message) => {
+			if (version !== requestVersion) {
+				return
+			}
+			loading.value = false
+			loadFailed.value = true
+			failMessage.value = message
+		})
+	}
+
+	function loadMore (): void {
+		loadList(false)
+	}
+
+	function openArticle (item: ForumArticle): void {
+		if (managing.value || item.id.length === 0) {
+			return
+		}
+		uni.navigateTo({
+			url: '/pages/forum-detail/forum-detail?id=' + item.id
+		})
+	}
+
+	function confirmRemove (item: ForumArticle): void {
+		if (removingId.value.length > 0) {
+			return
+		}
+		const action = selectedType.value === 'favorite' ? '收藏' : '点赞'
+		uni.showModal({
+			title: '取消' + action,
+			content: '是否取消该文章的' + action + '？',
+			cancelText: '保留',
+			confirmText: '确认取消',
+			success: (res) => {
+				if (res.confirm) {
+					removeInteraction(item)
+				}
+			}
+		})
+	}
+
+	function removeInteraction (item: ForumArticle): void {
+		removingId.value = item.id
+		const removeType = selectedType.value
+		const requestData = new UTSJSONObject()
+		requestData.set('status', 0)
+		let path = '/forum_favorite'
+		if (removeType === 'like') {
+			path = '/forum_like'
+			requestData.set('target_type', 1)
+			requestData.set('target_id', item.id)
+		} else {
+			requestData.set('article_id', item.id)
+		}
+		post(path, requestData, (res) => {
+			removingId.value = ''
+			if (res.getNumber('code', 0) !== 200) {
+				uni.showToast({
+					title: res.getString('message') ?? '操作失败',
+					icon: 'none'
+				})
+				return
+			}
+			if (removeType === 'favorite') {
+				favoriteCount.value = Math.max(0, favoriteCount.value - 1)
+			} else {
+				likeCount.value = Math.max(0, likeCount.value - 1)
+			}
+			uni.showToast({
+				title: removeType === 'favorite' ? '已取消收藏' : '已取消点赞',
+				icon: 'none'
+			})
+			if (selectedType.value !== removeType) {
+				return
+			}
+			const nextList: ForumArticle[] = []
+			for (let i = 0; i < list.value.length; i++) {
+				if (list.value[i].id !== item.id) {
+					nextList.push(list.value[i])
+				}
+			}
+			list.value = nextList
+			if (!finished.value) {
+				loadList(true)
+			}
+		}, (message) => {
+			removingId.value = ''
+			uni.showToast({
+				title: message,
+				icon: 'none'
+			})
+		})
+	}
+
+	function authorInitial (item: ForumArticle): string {
+		return item.name.length > 0 ? item.name.substring(0, 1) : '康'
+	}
+
+	function goBack (): void {
+		uni.navigateBack()
+	}
+
+	function goForum (): void {
+		uni.switchTab({
+			url: '/pages/index/index'
+		})
+	}
+
+	function openLoginGuide (): void {
+		uni.showModal({
+			title: '请先登录',
+			content: '登录后才能查看点赞和收藏的文章',
+			showCancel: false,
+			success: () => {
+				uni.navigateTo({
+					url: '/pages/login-guide/login-guide'
+				})
+			}
+		})
+	}
+</script>
+
+<style lang="scss">
+	.page {
+		display: flex;
+		height: 100vh;
+		flex-direction: column;
+		overflow: hidden;
+		background: #F7F8FA;
+	}
+
+	.hero {
+		flex: 0 0 auto;
+		padding: 0 20px 22px;
+		background-image: linear-gradient(135deg, #FF8A3D 0%, #FF5224 100%);
+	}
+
+	.status-space {
+		width: 100%;
+	}
+
+	.nav-row {
+		display: flex;
+		height: 44px;
+		flex-direction: row;
+		align-items: center;
+		gap: 12px;
+	}
+
+	.back-button {
+		display: flex;
+		width: 32px;
+		height: 32px;
+		flex: 0 0 32px;
+		align-items: center;
+		justify-content: center;
+		border-radius: 999px;
+		background: rgba(255, 255, 255, 0.18);
+	}
+
+	.back-glyph {
+		margin-top: -2px;
+		font-size: 28px;
+		font-weight: 400;
+		line-height: 30px;
+		color: #FFFFFF;
+	}
+
+	.nav-title {
+		font-size: 16px;
+		font-weight: 600;
+		color: #FFFFFF;
+		line-height: 22px;
+	}
+
+	.nav-placeholder {
+		width: 32px;
+		height: 32px;
+		flex: 0 0 32px;
+	}
+
+	.content-scroll {
+		min-height: 0;
+		flex: 1;
+	}
+
+	.content {
+		display: flex;
+		min-height: 100%;
+		flex-direction: column;
+		gap: 12px;
+		padding: 12px 16px 40px;
+		box-sizing: border-box;
+	}
+
+	.toolbar {
+		display: flex;
+		min-height: 32px;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+	}
+
+	.tab-list {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.tab {
+		display: flex;
+		height: 32px;
+		align-items: center;
+		justify-content: center;
+		padding: 0 18px;
+		border: 1px solid #EEF0F3;
+		border-radius: 999px;
+		background: #FFFFFF;
+		box-sizing: border-box;
+	}
+
+	.tab-active {
+		border-color: #FF6B35;
+		background: #FF6B35;
+	}
+
+	.tab-text {
+		font-size: 13px;
+		font-weight: 500;
+		color: #9CA3AF;
+		line-height: 18px;
+	}
+
+	.tab-text-active {
+		color: #FFFFFF;
+	}
+
+	.manage-button {
+		display: flex;
+		height: 32px;
+		flex: 0 0 auto;
+		align-items: center;
+		justify-content: center;
+		padding: 0 10px;
+		border-radius: 999px;
+	}
+
+	.manage-button-active {
+		background: #FFF0E8;
+	}
+
+	.manage-text {
+		font-size: 12px;
+		font-weight: 400;
+		color: #9CA3AF;
+		line-height: 18px;
+	}
+
+	.manage-text-active {
+		font-weight: 500;
+		color: #FF6B35;
+	}
+
+	.article-list {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
+
+	.article-row {
+		display: flex;
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		gap: 2px;
+	}
+
+	.remove-button {
+		display: flex;
+		width: 32px;
+		height: 32px;
+		flex: 0 0 32px;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.remove-circle {
+		display: flex;
+		width: 22px;
+		height: 22px;
+		align-items: center;
+		justify-content: center;
+		border-radius: 50%;
+		background: #EF3F3F;
+		box-shadow: 0 2px 6px rgba(239, 63, 63, 0.28);
+	}
+
+	.remove-line {
+		width: 10px;
+		height: 2px;
+		border-radius: 1px;
+		background: #FFFFFF;
+	}
+
+	.article-card {
+		display: flex;
+		min-width: 0;
+		flex: 1;
+		flex-direction: column;
+		gap: 10px;
+		padding: 14px;
+		border: 1px solid #EEF0F3;
+		border-radius: 16px;
+		background: #FFFFFF;
+		box-sizing: border-box;
+		box-shadow: 0 4px 16px rgba(23, 26, 36, 0.04);
+	}
+
+	.author-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px;
+	}
+
+	.author-info {
+		display: flex;
+		min-width: 0;
+		flex: 1;
+		flex-direction: row;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.author-avatar {
+		display: flex;
+		width: 32px;
+		height: 32px;
+		flex: 0 0 32px;
+		align-items: center;
+		justify-content: center;
+		border-radius: 50%;
+		background: #EEF0F4;
+	}
+
+	.author-avatar-empty {
+		font-size: 14px;
+		color: #6B7280;
+	}
+
+	.author-name {
+		overflow: hidden;
+		font-size: 13px;
+		font-weight: 500;
+		color: #1A1D24;
+		line-height: 18px;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.author-time {
+		flex: 0 0 auto;
+		font-size: 11px;
+		color: #9CA3AF;
+		line-height: 16px;
+	}
+
+	.content-row {
+		display: flex;
+		flex-direction: row;
+		align-items: flex-start;
+		gap: 12px;
+	}
+
+	.content-copy {
+		display: flex;
+		min-width: 0;
+		flex: 1;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.article-title {
+		font-size: 15px;
+		font-weight: 600;
+		color: #1A1D24;
+		line-height: 22px;
+		word-break: break-all;
+	}
+
+	.article-summary {
+		font-size: 13px;
+		font-weight: 400;
+		color: #6B7280;
+		line-height: 20px;
+		word-break: break-all;
+	}
+
+	.article-cover {
+		width: 96px;
+		height: 72px;
+		flex: 0 0 96px;
+		border-radius: 8px;
+	}
+
+	.state-card {
+		display: flex;
+		min-height: 120px;
+		align-items: center;
+		justify-content: center;
+		padding: 24px;
+		border: 1px solid #EEF0F3;
+		border-radius: 16px;
+		background: #FFFFFF;
+		box-sizing: border-box;
+	}
+
+	.state-text {
+		font-size: 13px;
+		color: #9CA3AF;
+		text-align: center;
+	}
+
+	.empty-card {
+		display: flex;
+		min-height: 0;
+		flex: 1;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		padding: 28px 24px;
+		border: 1px solid #EEF0F3;
+		border-radius: 16px;
+		background: #FFFFFF;
+		box-sizing: border-box;
+	}
+
+	.empty-icon {
+		width: 72px;
+		height: 72px;
+		margin-bottom: 14px;
+	}
+
+	.empty-title {
+		font-size: 16px;
+		font-weight: 600;
+		color: #1A1D24;
+		line-height: 22px;
+	}
+
+	.empty-description {
+		margin-top: 6px;
+		font-size: 12px;
+		color: #9CA3AF;
+		line-height: 18px;
+		text-align: center;
+	}
+
+	.empty-action {
+		display: flex;
+		height: 34px;
+		align-items: center;
+		justify-content: center;
+		margin-top: 18px;
+		padding: 0 18px;
+		border-radius: 999px;
+		background: #FF6B35;
+	}
+
+	.empty-action-text {
+		font-size: 13px;
+		font-weight: 600;
+		color: #FFFFFF;
+	}
+
+	.list-status {
+		display: flex;
+		height: 44px;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.list-status-text {
+		font-size: 12px;
+		color: #B1B6BF;
+	}
+</style>

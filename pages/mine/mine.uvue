@@ -31,11 +31,11 @@
 						<text class="stat-value">{{ loggedIn ? rehabDays : '—' }}</text>
 						<text class="stat-label">康复天数</text>
 					</view>
-					<view class="stat-item">
+					<view class="stat-item stat-item-action" @click="goInteractions('favorite')">
 						<text class="stat-value">{{ loggedIn ? collectCount : '—' }}</text>
 						<text class="stat-label">收藏</text>
 					</view>
-					<view class="stat-item">
+					<view class="stat-item stat-item-action" @click="goInteractions('like')">
 						<text class="stat-value">{{ loggedIn ? likeCount : '—' }}</text>
 						<text class="stat-label">点赞</text>
 					</view>
@@ -215,6 +215,18 @@
 		}
 		uni.navigateTo({
 			url: '/pages/my-plans/my-plans'
+		})
+	}
+
+	function goInteractions (type: string): void {
+		if (!loggedIn.value) {
+			uni.navigateTo({
+				url: '/pages/login-guide/login-guide'
+			})
+			return
+		}
+		uni.navigateTo({
+			url: '/pages/my-interactions/my-interactions?type=' + type
 		})
 	}
 

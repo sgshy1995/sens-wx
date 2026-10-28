@@ -74,6 +74,14 @@
 			}
 		},
 		{
+			"path": "pages/my-interactions/my-interactions",
+			"style": {
+				"navigationBarTitleText": "收藏/点赞",
+				"navigationStyle": "custom",
+				"backgroundColor": "#F7F8FA"
+			}
+		},
+		{
 			"path": "pages/profile/profile",
 			"style": {
 				"navigationBarTitleText": "个人资料",
