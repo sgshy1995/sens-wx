@@ -17,7 +17,7 @@
 					<text class="intro-text">使用提示：请拍照或选择部位照片，通过智能分析测量角度，以帮助您进行康复训练</text>
 				</view>
 
-				<view class="tool-card">
+				<view class="tool-card" @click="openJointAngleMeasurement">
 					<image class="tool-icon" src="/static/icons/ic-guanjie-do.svg" mode="aspectFit"></image>
 					<view class="tool-copy">
 						<text class="tool-title">关节角度测量</text>
@@ -36,23 +36,6 @@
 				</view>
 			</view>
 		</scroll-view>
-
-		<view class="bottom-nav">
-			<view class="nav-capsule">
-				<view class="nav-tab" @click="switchTab('/pages/index/index')">
-					<image class="nav-icon" src="/static/icons/ic-forum-inactive.png" mode="aspectFit"></image>
-					<text class="nav-text">论坛</text>
-				</view>
-				<view class="nav-tab" @click="switchTab('/pages/rehab/rehab')">
-					<image class="nav-icon" src="/static/icons/ic-rehab-inactive.png" mode="aspectFit"></image>
-					<text class="nav-text">康复</text>
-				</view>
-				<view class="nav-tab nav-tab-active">
-					<image class="nav-icon" src="/static/icons/ic-mine-active.png" mode="aspectFit"></image>
-					<text class="nav-text nav-text-active">我的</text>
-				</view>
-			</view>
-		</view>
 	</view>
 </template>
 
@@ -68,9 +51,9 @@
 		uni.navigateBack()
 	}
 
-	function switchTab (url: string): void {
-		uni.switchTab({
-			url
+	function openJointAngleMeasurement (): void {
+		uni.navigateTo({
+			url: '/pages/joint-angle-measure/joint-angle-measure'
 		})
 	}
 </script>
@@ -211,53 +194,4 @@
 		flex-shrink: 0;
 	}
 
-	.bottom-nav {
-		height: 86px;
-		flex-shrink: 0;
-		padding: 12px 21px;
-		box-sizing: border-box;
-		background: #FFFFFF;
-		box-shadow: 0 -4px 16px rgba(23, 26, 36, 0.06);
-	}
-
-	.nav-capsule {
-		display: flex;
-		height: 62px;
-		flex-direction: row;
-		padding: 4px;
-		box-sizing: border-box;
-		background: #FFFFFF;
-		border: 1px solid #EEF0F3;
-		border-radius: 31px;
-	}
-
-	.nav-tab {
-		display: flex;
-		flex: 1;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		gap: 3px;
-		border-radius: 27px;
-	}
-
-	.nav-tab-active {
-		background: #FF6B35;
-	}
-
-	.nav-icon {
-		width: 18px;
-		height: 18px;
-	}
-
-	.nav-text {
-		font-size: 10px;
-		font-weight: 500;
-		line-height: 14px;
-		color: #9CA3AF;
-	}
-
-	.nav-text-active {
-		color: #FFFFFF;
-	}
 </style>

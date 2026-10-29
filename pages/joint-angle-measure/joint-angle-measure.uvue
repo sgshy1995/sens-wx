@@ -1,0 +1,1058 @@
+<template>
+	<view class="page">
+		<view class="safe-nav" :style="{ paddingTop: statusBarHeight + 'px' }">
+			<view class="nav-row">
+				<view class="back-button" @click="goBack">
+					<text class="back-glyph">‹</text>
+				</view>
+				<text class="nav-title">关节角度测量</text>
+				<view class="nav-placeholder"></view>
+			</view>
+		</view>
+
+		<view v-if="!hasPhoto" class="content">
+			<view class="capture-target" @click="showPhotoPicker">
+				<image class="capture-icon" src="/static/icons/ic-camera-help.svg" mode="aspectFit"></image>
+			</view>
+
+			<text class="capture-hint">请先拍照或选择照片</text>
+		</view>
+
+		<view v-else class="editor-stage">
+			<canvas
+				id="measure-canvas"
+				class="measure-canvas"
+				@touchstart.stop.prevent="onCanvasTouchStart"
+				@touchmove.stop.prevent="onCanvasTouchMove"
+				@touchend.stop="onCanvasTouchEnd"
+				@touchcancel.stop="onCanvasTouchCancel"
+			></canvas>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	type Point = {
+		x: number
+		y: number
+	}
+
+	const statusBarHeight = ref(24)
+	const hasPhoto = ref(false)
+	const hintText = ref('请绘制角度辅助线')
+	const drawMode = ref(false)
+	const invertMode = ref(false)
+	const drawStep = ref('ready')
+	const points = ref<Point[]>([])
+	const currentAngle = ref(0)
+	const noticeVisible = ref(false)
+	const noticeText = ref('')
+	const instance = getCurrentInstance()!.proxy!
+
+	let canvasContext: CanvasContext | null = null
+	let renderingContext: CanvasRenderingContext2D | null = null
+	let canvasElement: UniCanvasElement | null = null
+	let photoImage: Image | null = null
+	let pendingPhotoPath = ''
+	let canvasWidth = 0
+	let canvasHeight = 0
+	let canvasInitAttempts = 0
+	let iconDownload: Image | null = null
+	let iconInvert: Image | null = null
+	let iconInvertActive: Image | null = null
+	let iconDraw: Image | null = null
+	let iconDrawActive: Image | null = null
+	let iconChangePhoto: Image | null = null
+
+	let touchStartX = 0
+	let touchStartY = 0
+	let lastDragX = 0
+	let lastDragY = 0
+	let touchMoved = false
+	let dragMode = 'none'
+	let dragPointIndex = -1
+	let pressedButton = ''
+	let noticeTimer = -1
+
+	onLoad(() => {
+		const sys = uni.getSystemInfoSync()
+		statusBarHeight.value = sys.statusBarHeight
+	})
+
+	onUnload(() => {
+		if (noticeTimer >= 0) {
+			clearTimeout(noticeTimer)
+			noticeTimer = -1
+		}
+	})
+
+	function goBack (): void {
+		uni.navigateBack()
+	}
+
+	function choosePhoto (fromCamera: boolean): void {
+		wx.chooseImage({
+			count: 1,
+			sizeType: ['compressed'],
+			sourceType: [fromCamera ? 'camera' : 'album'],
+			success: (res) => {
+				if (res.tempFilePaths.length === 0) {
+					return
+				}
+				setPhoto(res.tempFilePaths[0], !hasPhoto.value)
+			}
+		})
+	}
+
+	function setPhoto (path: string, resetDrawing: boolean): void {
+		pendingPhotoPath = path
+		if (resetDrawing) {
+			resetMeasurement(true)
+		}
+		if (hasPhoto.value && renderingContext != null) {
+			loadPhotoImage(path)
+			return
+		}
+		hasPhoto.value = true
+		setTimeout(() => {
+			initializeCanvas()
+		}, 80)
+	}
+
+	function resetMeasurement (showReadyHint: boolean): void {
+		points.value = []
+		currentAngle.value = 0
+		drawMode.value = false
+		drawStep.value = 'ready'
+		hintText.value = showReadyHint ? '请绘制角度辅助线' : '请选择第一条线起始点'
+	}
+
+	function initializeCanvas (): void {
+		uni.createCanvasContextAsync({
+			id: 'measure-canvas',
+			component: instance,
+			success: (context: CanvasContext) => {
+				const candidateContext = context.getContext('2d')!
+				const candidateCanvas = candidateContext.canvas
+				if (candidateCanvas.offsetWidth <= 0 || candidateCanvas.offsetHeight <= 0) {
+					canvasInitAttempts += 1
+					if (canvasInitAttempts <= 3) {
+						setTimeout(() => {
+							initializeCanvas()
+						}, 120)
+					}
+					return
+				}
+
+				canvasInitAttempts = 0
+				canvasContext = context
+				renderingContext = candidateContext
+				canvasElement = candidateCanvas
+				const dpr = uni.getWindowInfo().pixelRatio
+				canvasWidth = candidateCanvas.offsetWidth
+				canvasHeight = candidateCanvas.offsetHeight
+				candidateCanvas.width = Math.round(canvasWidth * dpr)
+				candidateCanvas.height = Math.round(canvasHeight * dpr)
+				candidateContext.scale(dpr, dpr)
+				loadPhotoImage(pendingPhotoPath)
+				loadToolbarIcons()
+			},
+			fail: () => {
+				canvasInitAttempts += 1
+				if (canvasInitAttempts <= 3) {
+					setTimeout(() => {
+						initializeCanvas()
+					}, 120)
+				}
+			}
+		})
+	}
+
+	function loadToolbarIcons (): void {
+		if (canvasContext == null) {
+			return
+		}
+		loadToolbarIcon('download', '/static/icons/ic-help-download.svg')
+		loadToolbarIcon('invert', '/static/icons/ic-help-change-color.svg')
+		loadToolbarIcon('invertActive', '/static/icons/ic-help-change-color-white.svg')
+		loadToolbarIcon('draw', '/static/icons/ic-help-draw-line.svg')
+		loadToolbarIcon('drawActive', '/static/icons/ic-help-draw-line-white.svg')
+		loadToolbarIcon('changePhoto', '/static/icons/ic-help-change-photo.svg')
+	}
+
+	function loadToolbarIcon (name: string, source: string): void {
+		if (canvasContext == null) {
+			return
+		}
+		const image = canvasContext.createImage()
+		image.src = source
+		image.onload = () => {
+			if (name === 'download') {
+				iconDownload = image
+			} else if (name === 'invert') {
+				iconInvert = image
+			} else if (name === 'invertActive') {
+				iconInvertActive = image
+			} else if (name === 'draw') {
+				iconDraw = image
+			} else if (name === 'drawActive') {
+				iconDrawActive = image
+			} else if (name === 'changePhoto') {
+				iconChangePhoto = image
+			}
+			redrawCanvas(false)
+		}
+	}
+
+	function loadPhotoImage (path: string): void {
+		if (canvasContext == null || renderingContext == null || path.length === 0) {
+			return
+		}
+		const image = canvasContext.createImage()
+		image.src = path
+		image.onload = () => {
+			photoImage = image
+			redrawCanvas(false)
+		}
+		image.onerror = () => {
+			showNotice('照片加载失败，请重新选择')
+		}
+	}
+
+	function redrawCanvas (exportMode: boolean): void {
+		const ctx = renderingContext
+		if (ctx == null || photoImage == null) {
+			return
+		}
+
+		ctx.clearRect(0, 0, canvasWidth, canvasHeight)
+		ctx.fillStyle = '#11131A'
+		ctx.fillRect(0, 0, canvasWidth, canvasHeight)
+
+		const imageWidth = photoImage.width
+		const imageHeight = photoImage.height
+		if (imageWidth > 0 && imageHeight > 0) {
+			const scale = Math.max(canvasWidth / imageWidth, canvasHeight / imageHeight)
+			const drawWidth = imageWidth * scale
+			const drawHeight = imageHeight * scale
+			ctx.drawImage(
+				photoImage,
+				(canvasWidth - drawWidth) / 2,
+				(canvasHeight - drawHeight) / 2,
+				drawWidth,
+				drawHeight
+			)
+		}
+
+		drawMeasurement(ctx)
+		drawHintPill(ctx)
+		if (!exportMode) {
+			drawControlButtons(ctx)
+			if (noticeVisible.value) {
+				drawNotice(ctx)
+			}
+		}
+	}
+
+	function drawMeasurement (ctx: CanvasRenderingContext2D): void {
+		if (points.value.length === 0) {
+			return
+		}
+
+		const lineColor = invertMode.value ? '#FFFFFF' : '#1A1D24'
+		const pointFill = invertMode.value ? '#1A1D24' : '#FFFFFF'
+		const pointStroke = invertMode.value ? '#FFFFFF' : '#1A1D24'
+
+		ctx.strokeStyle = lineColor
+		ctx.lineWidth = 3
+		ctx.lineCap = 'round'
+		ctx.lineJoin = 'round'
+
+		if (points.value.length >= 2) {
+			ctx.beginPath()
+			ctx.moveTo(points.value[0].x, points.value[0].y)
+			ctx.lineTo(points.value[1].x, points.value[1].y)
+			ctx.stroke()
+		}
+		if (points.value.length >= 3) {
+			ctx.beginPath()
+			ctx.moveTo(points.value[1].x, points.value[1].y)
+			ctx.lineTo(points.value[2].x, points.value[2].y)
+			ctx.stroke()
+		}
+
+		for (let i = 0; i < points.value.length; i++) {
+			ctx.beginPath()
+			ctx.arc(points.value[i].x, points.value[i].y, 6, 0, Math.PI * 2)
+			ctx.fillStyle = pointFill
+			ctx.fill()
+			ctx.strokeStyle = pointStroke
+			ctx.lineWidth = 2
+			ctx.stroke()
+		}
+
+		if (points.value.length === 3) {
+			drawAngleArc(ctx)
+		}
+	}
+
+	function drawAngleArc (ctx: CanvasRenderingContext2D): void {
+		const first = points.value[0]
+		const vertex = points.value[1]
+		const last = points.value[2]
+		const firstAngle = Math.atan2(first.y - vertex.y, first.x - vertex.x)
+		const lastAngle = Math.atan2(last.y - vertex.y, last.x - vertex.x)
+		let delta = lastAngle - firstAngle
+		while (delta > Math.PI) {
+			delta -= Math.PI * 2
+		}
+		while (delta < -Math.PI) {
+			delta += Math.PI * 2
+		}
+
+		const firstLength = distance(first, vertex)
+		const lastLength = distance(last, vertex)
+		const radius = Math.max(26, Math.min(48, Math.min(firstLength, lastLength) * 0.42))
+
+		ctx.beginPath()
+		ctx.strokeStyle = '#FF6B35'
+		ctx.lineWidth = 3
+		ctx.arc(vertex.x, vertex.y, radius, firstAngle, firstAngle + delta, delta < 0)
+		ctx.stroke()
+	}
+
+	function drawHintPill (ctx: CanvasRenderingContext2D): void {
+		ctx.font = '400 14px sans-serif'
+		const textWidth = ctx.measureText(hintText.value).width
+		const pillWidth = Math.max(200, Math.min(canvasWidth - 48, textWidth + 40))
+		const pillHeight = 39
+		const pillX = (canvasWidth - pillWidth) / 2
+		const pillY = 32
+
+		ctx.beginPath()
+		roundedRectPath(ctx, pillX, pillY, pillWidth, pillHeight, 22)
+		ctx.fillStyle = '#1A1D24'
+		ctx.fill()
+
+		ctx.fillStyle = '#FFFFFF'
+		ctx.textAlign = 'center'
+		ctx.textBaseline = 'middle'
+		ctx.fillText(hintText.value, canvasWidth / 2, pillY + pillHeight / 2)
+	}
+
+	function drawControlButtons (ctx: CanvasRenderingContext2D): void {
+		const buttonY = canvasHeight - 86
+		const rightGroupX = canvasWidth - 180
+		drawControlButton(ctx, 24, buttonY, 'save', false, iconDownload)
+		drawControlButton(ctx, rightGroupX, buttonY, 'invert', invertMode.value, invertMode.value ? iconInvertActive : iconInvert)
+		drawControlButton(ctx, rightGroupX + 58, buttonY, 'draw', drawMode.value, drawMode.value ? iconDrawActive : iconDraw)
+		drawControlButton(ctx, rightGroupX + 116, buttonY, 'changePhoto', false, iconChangePhoto)
+	}
+
+	function drawNotice (ctx: CanvasRenderingContext2D): void {
+		const text = noticeText.value
+		ctx.font = '600 15px sans-serif'
+		const maxCardWidth = canvasWidth - 48
+		const maxTextWidth = maxCardWidth - 65
+		const textWidth = Math.min(maxTextWidth, ctx.measureText(text).width)
+		const cardWidth = Math.max(180, Math.min(maxCardWidth, textWidth + 65))
+		const cardHeight = 48
+		const cardX = (canvasWidth - cardWidth) / 2
+		const cardY = (canvasHeight - cardHeight) / 2
+		const centerY = cardY + cardHeight / 2
+
+		ctx.save()
+		ctx.shadowColor = 'rgba(0, 0, 0, 0.3)'
+		ctx.shadowBlur = 40
+		ctx.shadowOffsetX = 0
+		ctx.shadowOffsetY = 16
+		ctx.beginPath()
+		roundedRectPath(ctx, cardX, cardY, cardWidth, cardHeight, 14)
+		ctx.fillStyle = '#1F2937'
+		ctx.fill()
+		ctx.restore()
+
+		ctx.beginPath()
+		roundedRectPath(ctx, cardX, cardY, cardWidth, cardHeight, 14)
+		ctx.strokeStyle = '#3A4658'
+		ctx.lineWidth = 1
+		ctx.stroke()
+
+		ctx.beginPath()
+		ctx.arc(cardX + 20, centerY, 4, 0, Math.PI * 2)
+		ctx.fillStyle = '#FF8A50'
+		ctx.fill()
+
+		ctx.fillStyle = '#FFFFFF'
+		ctx.font = '600 15px sans-serif'
+		ctx.textAlign = 'left'
+		ctx.textBaseline = 'middle'
+		ctx.fillText(text, cardX + 33, centerY)
+	}
+
+	function drawControlButton (
+		ctx: CanvasRenderingContext2D,
+		x: number,
+		y: number,
+		key: string,
+		active: boolean,
+		icon: Image | null
+	): void {
+		const centerX = x + 23
+		const centerY = y + 23
+		ctx.save()
+		ctx.shadowColor = 'rgba(0, 0, 0, 0.25)'
+		ctx.shadowBlur = 10
+		ctx.shadowOffsetX = 0
+		ctx.shadowOffsetY = 4
+		ctx.beginPath()
+		ctx.arc(centerX, centerY, 23, 0, Math.PI * 2)
+		ctx.fillStyle = active ? '#FF6B35' : '#FFFFFF'
+		ctx.fill()
+		ctx.restore()
+
+		if (pressedButton === key) {
+			ctx.beginPath()
+			ctx.arc(centerX, centerY, 23, 0, Math.PI * 2)
+			ctx.fillStyle = 'rgba(0, 0, 0, 0.08)'
+			ctx.fill()
+		}
+
+		if (icon != null) {
+			ctx.drawImage(icon, centerX - 10.5, centerY - 10.5, 21, 21)
+			return
+		}
+
+		const color = active ? '#FFFFFF' : '#1A1D24'
+		if (key === 'save') {
+			drawDownloadIcon(ctx, centerX, centerY, color)
+		} else if (key === 'invert') {
+			drawInvertIcon(ctx, centerX, centerY, color, active)
+		} else if (key === 'draw') {
+			drawLineIcon(ctx, centerX, centerY, color)
+		} else {
+			drawPhotoIcon(ctx, centerX, centerY, color)
+		}
+	}
+
+	function drawDownloadIcon (ctx: CanvasRenderingContext2D, centerX: number, centerY: number, color: string): void {
+		ctx.save()
+		ctx.strokeStyle = color
+		ctx.fillStyle = color
+		ctx.lineWidth = 1.8
+		ctx.lineCap = 'round'
+		ctx.lineJoin = 'round'
+		ctx.beginPath()
+		ctx.moveTo(centerX, centerY - 8)
+		ctx.lineTo(centerX, centerY + 2)
+		ctx.moveTo(centerX - 3.2, centerY - 1)
+		ctx.lineTo(centerX, centerY + 2)
+		ctx.lineTo(centerX + 3.2, centerY - 1)
+		ctx.stroke()
+		ctx.beginPath()
+		ctx.moveTo(centerX - 6, centerY + 5)
+		ctx.lineTo(centerX - 6, centerY + 7)
+		ctx.quadraticCurveTo(centerX - 6, centerY + 8, centerX - 5, centerY + 8)
+		ctx.lineTo(centerX + 5, centerY + 8)
+		ctx.quadraticCurveTo(centerX + 6, centerY + 8, centerX + 6, centerY + 7)
+		ctx.lineTo(centerX + 6, centerY + 5)
+		ctx.stroke()
+		ctx.restore()
+	}
+
+	function drawInvertIcon (
+		ctx: CanvasRenderingContext2D,
+		centerX: number,
+		centerY: number,
+		color: string,
+		active: boolean
+	): void {
+		ctx.save()
+		ctx.strokeStyle = color
+		ctx.fillStyle = color
+		ctx.lineWidth = 1.6
+		ctx.lineCap = 'round'
+		ctx.beginPath()
+		ctx.arc(centerX, centerY, 7, Math.PI * 1.08, Math.PI * 1.92)
+		ctx.stroke()
+		ctx.beginPath()
+		ctx.moveTo(centerX + 5.8, centerY - 5.4)
+		ctx.lineTo(centerX + 7.2, centerY - 3.7)
+		ctx.lineTo(centerX + 4.8, centerY - 3.2)
+		ctx.fill()
+		ctx.beginPath()
+		ctx.arc(centerX, centerY, 7, Math.PI * 0.08, Math.PI * 0.92)
+		ctx.stroke()
+		ctx.beginPath()
+		ctx.moveTo(centerX + 5.8, centerY + 5.4)
+		ctx.lineTo(centerX + 7.2, centerY + 3.7)
+		ctx.lineTo(centerX + 4.8, centerY + 3.2)
+		ctx.fill()
+		ctx.beginPath()
+		ctx.arc(centerX - 3.4, centerY, 1.8, 0, Math.PI * 2)
+		ctx.fill()
+		ctx.beginPath()
+		ctx.arc(centerX + 3.4, centerY, 1.8, 0, Math.PI * 2)
+		ctx.fillStyle = active ? '#FF6B35' : '#FFFFFF'
+		ctx.fill()
+		ctx.strokeStyle = color
+		ctx.stroke()
+		ctx.restore()
+	}
+
+	function drawLineIcon (ctx: CanvasRenderingContext2D, centerX: number, centerY: number, color: string): void {
+		ctx.save()
+		ctx.strokeStyle = color
+		ctx.fillStyle = color
+		ctx.lineWidth = 1.8
+		ctx.lineCap = 'round'
+		ctx.beginPath()
+		ctx.moveTo(centerX - 6, centerY - 6)
+		ctx.lineTo(centerX + 6, centerY + 6)
+		ctx.stroke()
+		ctx.beginPath()
+		ctx.arc(centerX - 6, centerY - 6, 2.4, 0, Math.PI * 2)
+		ctx.fill()
+		ctx.beginPath()
+		ctx.arc(centerX + 6, centerY + 6, 2.4, 0, Math.PI * 2)
+		ctx.fill()
+		ctx.restore()
+	}
+
+	function drawPhotoIcon (ctx: CanvasRenderingContext2D, centerX: number, centerY: number, color: string): void {
+		ctx.save()
+		ctx.strokeStyle = color
+		ctx.fillStyle = color
+		ctx.lineWidth = 1.8
+		ctx.lineJoin = 'round'
+		ctx.beginPath()
+		ctx.roundedRect(centerX - 8, centerY - 7, 16, 14, 2.5)
+		ctx.stroke()
+		ctx.beginPath()
+		ctx.arc(centerX - 4.5, centerY - 3.5, 1.5, 0, Math.PI * 2)
+		ctx.fill()
+		ctx.beginPath()
+		ctx.moveTo(centerX - 7, centerY + 4)
+		ctx.lineTo(centerX - 2.5, centerY)
+		ctx.lineTo(centerX + 0.5, centerY + 2.5)
+		ctx.lineTo(centerX + 3, centerY + 0.2)
+		ctx.lineTo(centerX + 7, centerY + 4)
+		ctx.stroke()
+		ctx.restore()
+	}
+
+	function roundedRectPath (
+		ctx: CanvasRenderingContext2D,
+		x: number,
+		y: number,
+		width: number,
+		height: number,
+		radius: number
+	): void {
+		ctx.moveTo(x + radius, y)
+		ctx.lineTo(x + width - radius, y)
+		ctx.quadraticCurveTo(x + width, y, x + width, y + radius)
+		ctx.lineTo(x + width, y + height - radius)
+		ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height)
+		ctx.lineTo(x + radius, y + height)
+		ctx.quadraticCurveTo(x, y + height, x, y + height - radius)
+		ctx.lineTo(x, y + radius)
+		ctx.quadraticCurveTo(x, y, x + radius, y)
+		ctx.closePath()
+	}
+
+	function toggleDrawMode (): void {
+		if (drawMode.value) {
+			resetMeasurement(true)
+			redrawCanvas(false)
+			return
+		}
+		points.value = []
+		currentAngle.value = 0
+		drawMode.value = true
+		drawStep.value = 'firstStart'
+		hintText.value = '请选择第一条线起始点'
+		redrawCanvas(false)
+	}
+
+	function toggleInvertMode (): void {
+		invertMode.value = !invertMode.value
+		redrawCanvas(false)
+	}
+
+	function changePhoto (): void {
+		showPhotoPicker()
+	}
+
+	function showPhotoPicker (): void {
+		uni.showActionSheet({
+			itemList: ['从相册选择照片', '拍照'],
+			success: (res) => {
+				choosePhoto(res.tapIndex === 1)
+			}
+		})
+	}
+
+	function getTouchPoint (event: TouchEvent): Point {
+		const touch = event.touches[0]
+		// #ifdef MP-WEIXIN
+		return { x: touch.x, y: touch.y } as Point
+		// #endif
+		// #ifndef MP-WEIXIN
+		return { x: touch.clientX, y: touch.clientY } as Point
+		// #endif
+	}
+
+	function hitControlButton (x: number, y: number): string {
+		const buttonY = canvasHeight - 86
+		const rightGroupX = canvasWidth - 180
+		if (isPointInRect(x, y, 24, buttonY, 46, 46)) {
+			return 'save'
+		}
+		if (isPointInRect(x, y, rightGroupX, buttonY, 46, 46)) {
+			return 'invert'
+		}
+		if (isPointInRect(x, y, rightGroupX + 58, buttonY, 46, 46)) {
+			return 'draw'
+		}
+		if (isPointInRect(x, y, rightGroupX + 116, buttonY, 46, 46)) {
+			return 'changePhoto'
+		}
+		return ''
+	}
+
+	function isPointInRect (
+		x: number,
+		y: number,
+	left: number,
+		top: number,
+		width: number,
+		height: number
+	): boolean {
+		return x >= left && x <= left + width && y >= top && y <= top + height
+	}
+
+	function handleControlButton (button: string): void {
+		if (button === 'save') {
+			saveMeasurement()
+		} else if (button === 'invert') {
+			toggleInvertMode()
+		} else if (button === 'draw') {
+			toggleDrawMode()
+		} else if (button === 'changePhoto') {
+			changePhoto()
+		}
+	}
+
+	function onCanvasTouchStart (event: TouchEvent): void {
+		if (event.touches.length === 0) {
+			return
+		}
+		const point = getTouchPoint(event)
+		touchStartX = point.x
+		touchStartY = point.y
+		touchMoved = false
+		dragMode = 'none'
+		dragPointIndex = -1
+		const control = hitControlButton(touchStartX, touchStartY)
+		if (control.length > 0) {
+			pressedButton = control
+			redrawCanvas(false)
+			return
+		}
+		pressedButton = ''
+
+		if (points.value.length === 3) {
+			for (let i = 0; i < points.value.length; i++) {
+				if (distance(points.value[i], { x: touchStartX, y: touchStartY } as Point) <= 20) {
+					dragMode = 'point'
+					dragPointIndex = i
+					lastDragX = touchStartX
+					lastDragY = touchStartY
+					return
+				}
+			}
+
+			if (distanceToSegment(points.value[0], points.value[1], touchStartX, touchStartY) <= 14 ||
+				distanceToSegment(points.value[1], points.value[2], touchStartX, touchStartY) <= 14) {
+				dragMode = 'line'
+				lastDragX = touchStartX
+				lastDragY = touchStartY
+			}
+		}
+	}
+
+	function onCanvasTouchMove (event: TouchEvent): void {
+		if (event.touches.length === 0) {
+			return
+		}
+		const point = getTouchPoint(event)
+		const currentX = point.x
+		const currentY = point.y
+
+		if (pressedButton.length > 0) {
+			if (Math.abs(currentX - touchStartX) > 4 || Math.abs(currentY - touchStartY) > 4) {
+				touchMoved = true
+			}
+			return
+		}
+
+		if (dragMode === 'point' && dragPointIndex >= 0) {
+			movePoint(dragPointIndex, currentX, currentY)
+			touchMoved = true
+			return
+		}
+		if (dragMode === 'line') {
+			moveWholeLine(currentX - lastDragX, currentY - lastDragY)
+			lastDragX = currentX
+			lastDragY = currentY
+			touchMoved = true
+			return
+		}
+		if (Math.abs(currentX - touchStartX) > 4 || Math.abs(currentY - touchStartY) > 4) {
+			touchMoved = true
+		}
+	}
+
+	function onCanvasTouchEnd (): void {
+		if (pressedButton.length > 0) {
+			const control = pressedButton
+			pressedButton = ''
+			redrawCanvas(false)
+			if (!touchMoved) {
+				handleControlButton(control)
+			}
+			return
+		}
+		if (dragMode !== 'none') {
+			dragMode = 'none'
+			dragPointIndex = -1
+			return
+		}
+		if (drawMode.value && !touchMoved) {
+			addMeasurementPoint(touchStartX, touchStartY)
+		}
+	}
+
+	function onCanvasTouchCancel (): void {
+		pressedButton = ''
+		dragMode = 'none'
+		dragPointIndex = -1
+		redrawCanvas(false)
+	}
+
+	function addMeasurementPoint (x: number, y: number): void {
+		const point = {
+			x: Math.max(14, Math.min(canvasWidth - 14, x)),
+			y: Math.max(14, Math.min(canvasHeight - 14, y))
+		} as Point
+
+		if (drawStep.value === 'firstStart') {
+			points.value = [point]
+			drawStep.value = 'firstEnd'
+			hintText.value = '请选择第一条线终点'
+		} else if (drawStep.value === 'firstEnd') {
+			points.value.push(point)
+			drawStep.value = 'secondEnd'
+			hintText.value = '请选择第二条线终点'
+		} else if (drawStep.value === 'secondEnd') {
+			points.value.push(point)
+			drawStep.value = 'complete'
+			drawMode.value = false
+			currentAngle.value = calculateAngle()
+			hintText.value = `当前测量角度：${formatAngle(currentAngle.value)}°`
+		}
+		redrawCanvas(false)
+	}
+
+	function movePoint (index: number, x: number, y: number): void {
+		points.value[index].x = Math.max(14, Math.min(canvasWidth - 14, x))
+		points.value[index].y = Math.max(14, Math.min(canvasHeight - 14, y))
+		updateAngleAndRedraw()
+	}
+
+	function moveWholeLine (deltaX: number, deltaY: number): void {
+		let minX = points.value[0].x
+		let maxX = points.value[0].x
+		let minY = points.value[0].y
+		let maxY = points.value[0].y
+		for (let i = 1; i < points.value.length; i++) {
+			minX = Math.min(minX, points.value[i].x)
+			maxX = Math.max(maxX, points.value[i].x)
+			minY = Math.min(minY, points.value[i].y)
+			maxY = Math.max(maxY, points.value[i].y)
+		}
+		const safeDeltaX = Math.max(14 - minX, Math.min(canvasWidth - 14 - maxX, deltaX))
+		const safeDeltaY = Math.max(14 - minY, Math.min(canvasHeight - 14 - maxY, deltaY))
+		for (let i = 0; i < points.value.length; i++) {
+			points.value[i].x += safeDeltaX
+			points.value[i].y += safeDeltaY
+		}
+		redrawCanvas(false)
+	}
+
+	function updateAngleAndRedraw (): void {
+		currentAngle.value = calculateAngle()
+		hintText.value = `当前测量角度：${formatAngle(currentAngle.value)}°`
+		redrawCanvas(false)
+	}
+
+	function calculateAngle (): number {
+		if (points.value.length < 3) {
+			return 0
+		}
+		const first = points.value[0]
+		const vertex = points.value[1]
+		const last = points.value[2]
+		const firstAngle = Math.atan2(first.y - vertex.y, first.x - vertex.x)
+		const lastAngle = Math.atan2(last.y - vertex.y, last.x - vertex.x)
+		let delta = Math.abs(firstAngle - lastAngle)
+		if (delta > Math.PI) {
+			delta = Math.PI * 2 - delta
+		}
+		return delta * 180 / Math.PI
+	}
+
+	function formatAngle (value: number): string {
+		let text = value.toFixed(2)
+		while (text.endsWith('0')) {
+			text = text.substring(0, text.length - 1)
+		}
+		if (text.endsWith('.')) {
+			text = text.substring(0, text.length - 1)
+		}
+		return text
+	}
+
+	function distance (first: Point, second: Point): number {
+		const deltaX = first.x - second.x
+		const deltaY = first.y - second.y
+		return Math.sqrt(deltaX * deltaX + deltaY * deltaY)
+	}
+
+	function distanceToSegment (start: Point, end: Point, x: number, y: number): number {
+		const segmentX = end.x - start.x
+		const segmentY = end.y - start.y
+		const lengthSquared = segmentX * segmentX + segmentY * segmentY
+		if (lengthSquared === 0) {
+			return Math.sqrt((x - start.x) * (x - start.x) + (y - start.y) * (y - start.y))
+		}
+		let ratio = ((x - start.x) * segmentX + (y - start.y) * segmentY) / lengthSquared
+		ratio = Math.max(0, Math.min(1, ratio))
+		const nearestX = start.x + ratio * segmentX
+		const nearestY = start.y + ratio * segmentY
+		return Math.sqrt((x - nearestX) * (x - nearestX) + (y - nearestY) * (y - nearestY))
+	}
+
+	function saveMeasurement (): void {
+		if (drawStep.value !== 'complete' || points.value.length !== 3) {
+			showError('请先完成辅助线绘制')
+			return
+		}
+		if (renderingContext == null || canvasElement == null) {
+			showError('图片生成失败，请稍后重试')
+			return
+		}
+
+		redrawCanvas(true)
+		setTimeout(() => {
+			exportCanvasByDataUrl()
+		}, 80)
+	}
+
+	function exportCanvasByDataUrl (): void {
+		if (canvasContext == null) {
+			exportCanvasByTempFile()
+			return
+		}
+		try {
+			const dataUrl = canvasContext.toDataURL('image/png')
+			const separatorIndex = dataUrl.indexOf(',')
+			if (separatorIndex < 0 || separatorIndex >= dataUrl.length - 1) {
+				exportCanvasByTempFile()
+				return
+			}
+			const base64 = dataUrl.substring(separatorIndex + 1)
+			const filePath = `${uni.env.USER_DATA_PATH}/joint-angle-${Date.now()}.png`
+			uni.getFileSystemManager().writeFile({
+				filePath: filePath,
+				data: base64,
+				encoding: 'base64',
+				success: () => {
+					saveToAlbum(filePath)
+				},
+				fail: () => {
+					exportCanvasByTempFile()
+				}
+			} as WriteFileOptions)
+		} catch (error) {
+			exportCanvasByTempFile()
+		}
+	}
+
+	function exportCanvasByTempFile (): void {
+		if (canvasElement == null) {
+			redrawCanvas(false)
+			showError('图片生成失败，请稍后重试')
+			return
+		}
+		wx.canvasToTempFilePath({
+			canvas: canvasElement,
+			x: 0,
+			y: 0,
+			width: canvasWidth,
+			height: canvasHeight,
+			destWidth: Math.round(canvasWidth * 2),
+			destHeight: Math.round(canvasHeight * 2),
+			success: (res) => {
+				saveToAlbum(res.tempFilePath)
+			},
+			fail: () => {
+				redrawCanvas(false)
+				showError('图片生成失败，请稍后重试')
+			}
+		})
+	}
+
+	function saveToAlbum (filePath: string): void {
+		wx.saveImageToPhotosAlbum({
+			filePath: filePath,
+			success: () => {
+				showNotice('保存成功')
+			},
+			fail: () => {
+				redrawCanvas(false)
+				showError('保存失败，请允许访问相册后重试')
+			}
+		})
+	}
+
+	function showNotice (message: string): void {
+		if (message.length === 0) {
+			return
+		}
+		noticeText.value = message
+		noticeVisible.value = true
+		redrawCanvas(false)
+		if (noticeTimer >= 0) {
+			clearTimeout(noticeTimer)
+		}
+		noticeTimer = setTimeout(() => {
+			noticeVisible.value = false
+			noticeTimer = -1
+			redrawCanvas(false)
+		}, 2400)
+	}
+
+	function showError (message: string): void {
+		showNotice(message)
+	}
+</script>
+
+<style lang="scss">
+	.page {
+		display: flex;
+		flex-direction: column;
+		height: 100vh;
+		background: #F7F8FA;
+	}
+
+	.safe-nav {
+		flex-shrink: 0;
+		background: #FFFFFF;
+	}
+
+	.nav-row {
+		height: 56px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 16px;
+		padding-right: 16px;
+	}
+
+	.back-button {
+		width: 32px;
+		height: 32px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 16px;
+		background: #F3F4F6;
+		flex-shrink: 0;
+	}
+
+	.back-glyph {
+		margin-top: -3px;
+		font-size: 28px;
+		line-height: 28px;
+		color: #1A1D24;
+	}
+
+	.nav-title {
+		flex: 1;
+		text-align: center;
+		font-size: 18px;
+		font-weight: 600;
+		line-height: 22px;
+		color: #1A1D24;
+	}
+
+	.nav-placeholder {
+		width: 32px;
+		height: 32px;
+		flex-shrink: 0;
+	}
+
+	.content {
+		display: flex;
+		flex: 1;
+		min-height: 0;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 24px;
+		padding-left: 24px;
+		padding-right: 24px;
+		padding-bottom: 24px;
+	}
+
+	.capture-target {
+		width: 212px;
+		height: 222px;
+		margin-bottom: -36px;
+		flex-shrink: 0;
+		overflow: visible;
+	}
+
+	.capture-icon {
+		width: 212px;
+		height: 222px;
+	}
+
+	.capture-hint {
+		font-size: 15px;
+		font-weight: 400;
+		line-height: 18px;
+		color: #9CA3AF;
+		text-align: center;
+	}
+
+	.editor-stage {
+		position: relative;
+		display: flex;
+		flex: 1;
+		min-height: 0;
+		overflow: hidden;
+		background: #11131A;
+	}
+
+	.measure-canvas {
+		position: absolute;
+		left: 0;
+		top: 0;
+		width: 100%;
+		height: 100%;
+	}
+
+</style>

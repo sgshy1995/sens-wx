@@ -74,6 +74,14 @@
 			}
 		},
 		{
+			"path": "pages/joint-angle-measure/joint-angle-measure",
+			"style": {
+				"navigationBarTitleText": "关节角度测量",
+				"navigationStyle": "custom",
+				"backgroundColor": "#F7F8FA"
+			}
+		},
+		{
 			"path": "pages/my-plans/my-plans",
 			"style": {
 				"navigationBarTitleText": "我的方案",
