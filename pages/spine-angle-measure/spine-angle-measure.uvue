@@ -76,6 +76,7 @@
 	let iconDraw: Image | null = null
 	let iconDrawActive: Image | null = null
 	let iconChangePhoto: Image | null = null
+	let brandLogoImage: Image | null = null
 
 	let touchStartX = 0
 	let touchStartY = 0
@@ -283,6 +284,7 @@
 		loadToolbarIcon('draw', '/static/icons/ic-help-draw-line.svg')
 		loadToolbarIcon('drawActive', '/static/icons/ic-help-draw-line-white.svg')
 		loadToolbarIcon('changePhoto', '/static/icons/ic-help-change-photo.svg')
+		loadToolbarIcon('brandLogo', '/static/brand-logo.png')
 	}
 
 	function loadToolbarIcon (name: string, source: string): void {
@@ -300,6 +302,8 @@
 				iconDrawActive = image
 			} else if (name === 'changePhoto') {
 				iconChangePhoto = image
+			} else if (name === 'brandLogo') {
+				brandLogoImage = image
 			}
 			redrawCanvas(false)
 		}
@@ -336,7 +340,67 @@
 			if (noticeVisible.value) {
 				drawNotice(ctx)
 			}
+		} else {
+			drawWatermark(ctx)
 		}
+	}
+
+	function drawWatermark (ctx: CanvasRenderingContext2D): void {
+		ctx.font = '700 10px sans-serif'
+		const titleWidth = ctx.measureText('易赴康').width
+		ctx.font = '400 8px sans-serif'
+		const partnerWidth = ctx.measureText('您的康复伙伴').width
+		const textWidth = Math.max(titleWidth, partnerWidth)
+		const logoSize = 24
+		const logoGap = 7
+		const horizontalPadding = 6
+		const width = horizontalPadding * 2 + logoSize + logoGap + textWidth
+		const height = 38
+		const x = canvasWidth - width - 16
+		const y = canvasHeight - height - 20
+		ctx.save()
+		ctx.shadowColor = 'rgba(0, 0, 0, 0.12)'
+		ctx.shadowBlur = 18
+		ctx.shadowOffsetY = 5
+		ctx.beginPath()
+		roundedRectPath(ctx, x, y, width, height, 10)
+		ctx.fillStyle = 'rgba(255, 255, 255, 0.64)'
+		ctx.fill()
+		ctx.restore()
+		ctx.save()
+		ctx.strokeStyle = 'rgba(255, 255, 255, 0.32)'
+		ctx.lineWidth = 0.8
+		ctx.beginPath()
+		roundedRectPath(ctx, x, y, width, height, 10)
+		ctx.stroke()
+		ctx.restore()
+
+		const logoX = x + 6
+		const logoY = y + 7
+		ctx.save()
+		ctx.globalAlpha = 0.84
+		ctx.beginPath()
+		roundedRectPath(ctx, logoX, logoY, logoSize, logoSize, 6)
+		ctx.clip()
+		if (brandLogoImage != null) {
+			ctx.drawImage(brandLogoImage, logoX, logoY, logoSize, logoSize)
+		} else {
+			ctx.fillStyle = '#FF6B35'
+			ctx.fillRect(logoX, logoY, logoSize, logoSize)
+		}
+		ctx.restore()
+
+		ctx.save()
+		ctx.globalAlpha = 0.84
+		ctx.textAlign = 'left'
+		ctx.textBaseline = 'middle'
+		ctx.fillStyle = '#1A1D24'
+		ctx.font = '700 10px sans-serif'
+		ctx.fillText('易赴康', logoX + logoSize + logoGap, y + 13)
+		ctx.fillStyle = '#6B7280'
+		ctx.font = '400 8px sans-serif'
+		ctx.fillText('您的康复伙伴', logoX + logoSize + logoGap, y + 27)
+		ctx.restore()
 	}
 
 	function drawReferenceScene (ctx: CanvasRenderingContext2D): void {
