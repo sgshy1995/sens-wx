@@ -26,7 +26,7 @@
 					<image class="chevron-icon" src="/static/icons/ic-chevron.svg" mode="aspectFit"></image>
 				</view>
 
-				<view class="tool-card">
+				<view class="tool-card" @click="openSpineAngleMeasurement">
 					<image class="tool-icon" src="/static/icons/ic-jizhu-do.svg" mode="aspectFit"></image>
 					<view class="tool-copy">
 						<text class="tool-title">脊柱角度测量</text>
@@ -54,6 +54,12 @@
 	function openJointAngleMeasurement (): void {
 		uni.navigateTo({
 			url: '/pages/joint-angle-measure/joint-angle-measure'
+		})
+	}
+
+	function openSpineAngleMeasurement (): void {
+		uni.navigateTo({
+			url: '/pages/spine-angle-measure/spine-angle-measure'
 		})
 	}
 </script>

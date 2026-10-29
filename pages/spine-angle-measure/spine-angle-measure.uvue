@@ -1,0 +1,1278 @@
+<template>
+	<view class="page">
+		<view class="safe-nav" :style="{ paddingTop: statusBarHeight + 'px' }">
+			<view class="nav-row">
+				<view class="back-button" @click="goBack">
+					<text class="back-glyph">‹</text>
+				</view>
+				<text class="nav-title">脊柱角度测量</text>
+				<view class="nav-placeholder"></view>
+			</view>
+		</view>
+
+		<view v-if="!hasPhoto" class="content">
+			<view class="capture-target" @click="showPhotoPicker">
+				<image class="capture-icon" src="/static/icons/ic-camera-help.svg" mode="aspectFit"></image>
+			</view>
+			<text class="capture-hint">请先拍照或选择照片</text>
+		</view>
+
+		<view v-else class="editor-stage">
+			<canvas
+				id="spine-canvas"
+				class="measure-canvas"
+				@touchstart.stop.prevent="onCanvasTouchStart"
+				@touchmove.stop.prevent="onCanvasTouchMove"
+				@touchend.stop="onCanvasTouchEnd"
+				@touchcancel.stop="onCanvasTouchCancel"
+			></canvas>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	type Point = {
+		x: number
+		y: number
+	}
+
+	type LineState = {
+		start: Point
+		end: Point
+	}
+
+	const COBB_KEYS: string[] = ['A', 'B', 'C', 'D']
+	const BUTTON_KEYS: string[] = ['D', 'C', 'B', 'A']
+	const CONTROL_SIZE = 46
+	const CONTROL_GAP = 10
+	const CONTROL_BOTTOM = 40
+	const CONTROL_STEP = CONTROL_SIZE + CONTROL_GAP
+	const CONTROL_GROUP_WIDTH = CONTROL_SIZE * 5 + CONTROL_GAP * 4
+
+	const statusBarHeight = ref(24)
+	const hasPhoto = ref(false)
+	const noticeVisible = ref(false)
+	const noticeText = ref('')
+	const instance = getCurrentInstance()!.proxy!
+
+	let canvasContext: CanvasContext | null = null
+	let renderingContext: CanvasRenderingContext2D | null = null
+	let canvasElement: UniCanvasElement | null = null
+	let photoImage: Image | null = null
+	let pendingPhotoPath = ''
+	let canvasWidth = 0
+	let canvasHeight = 0
+	let canvasInitAttempts = 0
+	let sceneInitialized = false
+
+	let centerLine: LineState = createEmptyLine()
+	let pelvisLine: LineState = createEmptyLine()
+	let auxiliaryLine: LineState = createEmptyLine()
+	let auxiliaryMode = false
+	let selectedKeys: string[] = []
+	let cobbLines: LineState[][] = [[], [], [], []]
+
+	let iconDownload: Image | null = null
+	let iconDraw: Image | null = null
+	let iconDrawActive: Image | null = null
+	let iconChangePhoto: Image | null = null
+
+	let touchStartX = 0
+	let touchStartY = 0
+	let lastDragX = 0
+	let lastDragY = 0
+	let touchMoved = false
+	let pressedButton = ''
+	let dragType = 'none'
+	let dragCobbIndex = -1
+	let dragLineIndex = -1
+	let dragEndpointIndex = -1
+	let noticeTimer = -1
+
+	onLoad(() => {
+		const sys = uni.getSystemInfoSync()
+		statusBarHeight.value = sys.statusBarHeight
+	})
+
+	onUnload(() => {
+		if (noticeTimer >= 0) {
+			clearTimeout(noticeTimer)
+			noticeTimer = -1
+		}
+	})
+
+	function createEmptyLine (): LineState {
+		return {
+			start: { x: 0, y: 0 } as Point,
+			end: { x: 0, y: 0 } as Point
+		} as LineState
+	}
+
+	function createPoint (x: number, y: number): Point {
+		return { x: x, y: y } as Point
+	}
+
+	function copyPoint (point: Point): Point {
+		return createPoint(point.x, point.y)
+	}
+
+	function copyLine (line: LineState): LineState {
+		return {
+			start: copyPoint(line.start),
+			end: copyPoint(line.end)
+		} as LineState
+	}
+
+	function goBack (): void {
+		uni.navigateBack()
+	}
+
+	function showPhotoPicker (): void {
+		uni.showActionSheet({
+			itemList: ['从相册选择照片', '拍照'],
+			success: (res) => {
+				choosePhoto(res.tapIndex === 1)
+			}
+		})
+	}
+
+	function choosePhoto (fromCamera: boolean): void {
+		wx.chooseImage({
+			count: 1,
+			sizeType: ['compressed'],
+			sourceType: [fromCamera ? 'camera' : 'album'],
+			success: (res) => {
+				if (res.tempFilePaths.length === 0) {
+					return
+				}
+				setPhoto(res.tempFilePaths[0], !hasPhoto.value)
+			}
+		})
+	}
+
+	function setPhoto (path: string, firstPhoto: boolean): void {
+		pendingPhotoPath = path
+		if (firstPhoto) {
+			selectedKeys = []
+			auxiliaryMode = false
+			cobbLines = [[], [], [], []]
+			sceneInitialized = false
+		}
+		if (hasPhoto.value && renderingContext != null) {
+			if (!sceneInitialized) {
+				initializeScene()
+			}
+			loadPhotoImage(path)
+			return
+		}
+		hasPhoto.value = true
+		setTimeout(() => {
+			initializeCanvas()
+		}, 80)
+	}
+
+	function initializeCanvas (): void {
+		uni.createCanvasContextAsync({
+			id: 'spine-canvas',
+			component: instance,
+			success: (context: CanvasContext) => {
+				const candidateContext = context.getContext('2d')!
+				const candidateCanvas = candidateContext.canvas
+				if (candidateCanvas.offsetWidth <= 0 || candidateCanvas.offsetHeight <= 0) {
+					canvasInitAttempts += 1
+					if (canvasInitAttempts <= 3) {
+						setTimeout(() => {
+							initializeCanvas()
+						}, 120)
+					}
+					return
+				}
+
+				canvasInitAttempts = 0
+				canvasContext = context
+				renderingContext = candidateContext
+				canvasElement = candidateCanvas
+				const dpr = uni.getWindowInfo().pixelRatio
+				canvasWidth = candidateCanvas.offsetWidth
+				canvasHeight = candidateCanvas.offsetHeight
+				candidateCanvas.width = Math.round(canvasWidth * dpr)
+				candidateCanvas.height = Math.round(canvasHeight * dpr)
+				candidateContext.scale(dpr, dpr)
+				initializeScene()
+				loadPhotoImage(pendingPhotoPath)
+				loadToolbarIcons()
+			},
+			fail: () => {
+				canvasInitAttempts += 1
+				if (canvasInitAttempts <= 3) {
+					setTimeout(() => {
+						initializeCanvas()
+					}, 120)
+				}
+			}
+		})
+	}
+
+	function initializeScene (): void {
+		if (sceneInitialized) {
+			return
+		}
+		centerLine = createCenterLine()
+		pelvisLine = createPelvisLine()
+		auxiliaryLine = createAuxiliaryLine()
+		sceneInitialized = true
+	}
+
+	function createCenterLine (): LineState {
+		const centerX = canvasWidth / 2
+		return {
+			start: createPoint(centerX, canvasHeight * 0.12),
+			end: createPoint(centerX, canvasHeight * 0.82)
+		} as LineState
+	}
+
+	function createPelvisLine (): LineState {
+		const lineY = canvasHeight * 0.76
+		return {
+			start: createPoint(canvasWidth * 0.08, lineY),
+			end: createPoint(canvasWidth * 0.92, lineY)
+		} as LineState
+	}
+
+	function createAuxiliaryLine (): LineState {
+		const base = createCenterLine()
+		const offset = Math.min(96, canvasWidth * 0.24)
+		base.start.x -= offset
+		base.end.x -= offset
+		return base
+	}
+
+	function createInitialCobbLines (keyIndex: number): LineState[] {
+		const topRatios: number[] = [0.25, 0.38, 0.49, 0.60]
+		const firstY = canvasHeight * topRatios[keyIndex]
+		const secondY = firstY + canvasHeight * 0.055
+		return [
+			{
+				start: createPoint(canvasWidth * 0.15, firstY),
+				end: createPoint(canvasWidth * 0.85, firstY)
+			} as LineState,
+			{
+				start: createPoint(canvasWidth * 0.15, secondY),
+				end: createPoint(canvasWidth * 0.85, secondY)
+			} as LineState
+		]
+	}
+
+	function loadPhotoImage (path: string): void {
+		if (canvasContext == null || renderingContext == null || path.length === 0) {
+			return
+		}
+		const image = canvasContext.createImage()
+		image.src = path
+		image.onload = () => {
+			photoImage = image
+			redrawCanvas(false)
+		}
+		image.onerror = () => {
+			showNotice('照片加载失败，请重新选择')
+		}
+	}
+
+	function loadToolbarIcons (): void {
+		loadToolbarIcon('download', '/static/icons/ic-help-download.svg')
+		loadToolbarIcon('draw', '/static/icons/ic-help-draw-line.svg')
+		loadToolbarIcon('drawActive', '/static/icons/ic-help-draw-line-white.svg')
+		loadToolbarIcon('changePhoto', '/static/icons/ic-help-change-photo.svg')
+	}
+
+	function loadToolbarIcon (name: string, source: string): void {
+		if (canvasContext == null) {
+			return
+		}
+		const image = canvasContext.createImage()
+		image.src = source
+		image.onload = () => {
+			if (name === 'download') {
+				iconDownload = image
+			} else if (name === 'draw') {
+				iconDraw = image
+			} else if (name === 'drawActive') {
+				iconDrawActive = image
+			} else if (name === 'changePhoto') {
+				iconChangePhoto = image
+			}
+			redrawCanvas(false)
+		}
+	}
+
+	function redrawCanvas (exportMode: boolean): void {
+		const ctx = renderingContext
+		if (ctx == null || photoImage == null) {
+			return
+		}
+		ctx.clearRect(0, 0, canvasWidth, canvasHeight)
+		ctx.fillStyle = '#11131A'
+		ctx.fillRect(0, 0, canvasWidth, canvasHeight)
+
+		const imageWidth = photoImage.width
+		const imageHeight = photoImage.height
+		if (imageWidth > 0 && imageHeight > 0) {
+			const scale = Math.max(canvasWidth / imageWidth, canvasHeight / imageHeight)
+			const drawWidth = imageWidth * scale
+			const drawHeight = imageHeight * scale
+			ctx.drawImage(
+				photoImage,
+				(canvasWidth - drawWidth) / 2,
+				(canvasHeight - drawHeight) / 2,
+				drawWidth,
+				drawHeight
+			)
+		}
+
+		drawReferenceScene(ctx)
+		drawPromptPanel(ctx)
+		if (!exportMode) {
+			drawControlButtons(ctx)
+			if (noticeVisible.value) {
+				drawNotice(ctx)
+			}
+		}
+	}
+
+	function drawReferenceScene (ctx: CanvasRenderingContext2D): void {
+		for (let i = 0; i < COBB_KEYS.length; i++) {
+			if (isCobbSelected(COBB_KEYS[i])) {
+				drawCobbGroup(ctx, COBB_KEYS[i])
+			}
+		}
+		drawCenterGuide(ctx)
+		drawPelvisGuide(ctx)
+		if (auxiliaryMode) {
+			drawAuxiliaryGuide(ctx)
+		}
+	}
+
+	function drawCenterGuide (ctx: CanvasRenderingContext2D): void {
+		drawPlainLine(ctx, centerLine, '#CE6D74', 3)
+		drawTextLabel(ctx, '中垂线', centerLine.start.x, centerLine.start.y - 18, '#CE6D74', 'center')
+	}
+
+	function drawPelvisGuide (ctx: CanvasRenderingContext2D): void {
+		drawPlainLine(ctx, pelvisLine, '#72D687', 3)
+		drawTextLabel(ctx, '骨盆线', pelvisLine.start.x, pelvisLine.start.y - 18, '#72D687', 'left')
+	}
+
+	function drawAuxiliaryGuide (ctx: CanvasRenderingContext2D): void {
+		drawEditableLine(ctx, auxiliaryLine, '#FF6B35', '辅助线', 1)
+	}
+
+	function drawCobbGroup (ctx: CanvasRenderingContext2D, key: string): void {
+		const index = cobbIndex(key)
+		const lines = cobbLines[index]
+		if (lines.length < 2) {
+			return
+		}
+		const color = cobbColor(key)
+		drawEditableLine(ctx, lines[0], color, `${key}1`, 2)
+		drawEditableLine(ctx, lines[1], color, `${key}2`, 2)
+	}
+
+	function drawPlainLine (ctx: CanvasRenderingContext2D, line: LineState, color: string, width: number): void {
+		ctx.beginPath()
+		ctx.moveTo(line.start.x, line.start.y)
+		ctx.lineTo(line.end.x, line.end.y)
+		ctx.strokeStyle = color
+		ctx.lineWidth = width
+		ctx.lineCap = 'round'
+		ctx.stroke()
+	}
+
+	function drawEditableLine (
+		ctx: CanvasRenderingContext2D,
+		line: LineState,
+		color: string,
+		label: string,
+		labelMode: number
+	): void {
+		drawPlainLine(ctx, line, color, 3)
+		ctx.fillStyle = '#FFFFFF'
+		ctx.strokeStyle = color
+		ctx.lineWidth = 2
+		drawEndpointCircle(ctx, line.start)
+		drawEndpointCircle(ctx, line.end)
+
+		if (labelMode === 1) {
+			drawTextLabel(
+				ctx,
+				label,
+				line.start.x,
+				line.start.y - 18,
+				color,
+				'center'
+			)
+		} else if (labelMode === 2) {
+			drawTextLabel(ctx, label, line.start.x - 10, line.start.y, color, 'right')
+			drawTextLabel(ctx, label, line.end.x + 10, line.end.y, color, 'left')
+		} else {
+			drawTextLabel(
+				ctx,
+				label,
+				Math.min(line.start.x, line.end.x) - 8,
+				(line.start.y + line.end.y) / 2,
+				color,
+				'right'
+			)
+		}
+	}
+
+	function drawTextLabel (
+		ctx: CanvasRenderingContext2D,
+		text: string,
+		x: number,
+		y: number,
+		color: string,
+		align: string
+	): void {
+		ctx.font = '600 12px sans-serif'
+		const textWidth = ctx.measureText(text).width
+		const paddingX = 4
+		const paddingY = 2
+		const boxWidth = textWidth + paddingX * 2
+		const boxHeight = 16
+		let boxX = x - paddingX
+		if (align === 'center') {
+			boxX = x - boxWidth / 2
+		} else if (align === 'right') {
+			boxX = x - boxWidth + paddingX
+		}
+		const boxY = y - boxHeight / 2
+		ctx.beginPath()
+		roundedRectPath(ctx, boxX, boxY, boxWidth, boxHeight, 4)
+		ctx.fillStyle = '#FFFFFF'
+		ctx.fill()
+		ctx.fillStyle = color
+		ctx.textAlign = align
+		ctx.textBaseline = 'middle'
+		ctx.fillText(text, x, y)
+	}
+
+	function drawEndpointCircle (ctx: CanvasRenderingContext2D, point: Point): void {
+		ctx.beginPath()
+		ctx.arc(point.x, point.y, 5.5, 0, Math.PI * 2)
+		ctx.fill()
+		ctx.stroke()
+	}
+
+	function drawPromptPanel (ctx: CanvasRenderingContext2D): void {
+		const lines = promptLines()
+		ctx.font = '400 12px sans-serif'
+		const defaultWidth = ctx.measureText(lines[0]).width + 24
+		const hasMeasurements = auxiliaryMode || selectedKeys.length > 0
+		const panelWidth = Math.min(canvasWidth - 40, hasMeasurements ? 108 : defaultWidth)
+		const lineHeight = 18
+		const panelHeight = lines.length * lineHeight + 20
+		const panelX = canvasWidth - panelWidth - 20
+		const panelY = 24
+		ctx.beginPath()
+		roundedRectPath(ctx, panelX, panelY, panelWidth, panelHeight, 12)
+		ctx.fillStyle = 'rgba(26, 29, 36, 0.82)'
+		ctx.fill()
+		ctx.fillStyle = '#FFFFFF'
+		ctx.textAlign = 'center'
+		ctx.textBaseline = 'middle'
+		for (let i = 0; i < lines.length; i++) {
+			ctx.fillText(lines[i], panelX + panelWidth / 2, panelY + 10 + lineHeight * i + lineHeight / 2)
+		}
+	}
+
+	function promptLines (): string[] {
+		const lines: string[] = []
+		if (auxiliaryMode) {
+			lines.push(`Angel: ${formatAngle(angleBetweenLines(auxiliaryLine, centerLine))}°`)
+		}
+		for (let i = 0; i < COBB_KEYS.length; i++) {
+			const key = COBB_KEYS[i]
+			if (isCobbSelected(key)) {
+				const pair = cobbLines[cobbIndex(key)]
+				lines.push(`cobb${cobbNumber(key)}: ${formatAngle(angleBetweenLines(pair[0], pair[1]))}°`)
+			}
+		}
+		if (lines.length === 0) {
+			lines.push('请选择至少一组参考线')
+		}
+		return lines
+	}
+
+	function drawControlButtons (ctx: CanvasRenderingContext2D): void {
+		const buttonY = canvasHeight - CONTROL_BOTTOM - CONTROL_SIZE
+		const groupX = canvasWidth - CONTROL_GROUP_WIDTH - 12
+		drawIconButton(ctx, 24, buttonY, 'save', false, iconDownload)
+		for (let i = 0; i < BUTTON_KEYS.length; i++) {
+			drawCobbButton(ctx, groupX + CONTROL_STEP * i, buttonY, BUTTON_KEYS[i])
+		}
+		drawIconButton(ctx, groupX + CONTROL_STEP * 4, buttonY, 'draw', auxiliaryMode, auxiliaryMode ? iconDrawActive : iconDraw)
+		drawIconButton(
+			ctx,
+			groupX + CONTROL_STEP * 4,
+			buttonY - CONTROL_SIZE - 12,
+			'changePhoto',
+			false,
+			iconChangePhoto
+		)
+	}
+
+	function drawIconButton (
+		ctx: CanvasRenderingContext2D,
+		x: number,
+		y: number,
+		key: string,
+		active: boolean,
+		icon: Image | null
+	): void {
+		const centerX = x + CONTROL_SIZE / 2
+		const centerY = y + CONTROL_SIZE / 2
+		drawButtonBackground(ctx, x, y, active ? '#FF6B35' : '#FFFFFF')
+		if (pressedButton === key) {
+			ctx.beginPath()
+			ctx.arc(centerX, centerY, CONTROL_SIZE / 2, 0, Math.PI * 2)
+			ctx.fillStyle = 'rgba(0, 0, 0, 0.08)'
+			ctx.fill()
+		}
+		if (icon != null) {
+			ctx.drawImage(icon, centerX - 10.5, centerY - 10.5, 21, 21)
+			return
+		}
+		const color = active ? '#FFFFFF' : '#1A1D24'
+		if (key === 'save') {
+			drawDownloadIcon(ctx, centerX, centerY, color)
+		} else if (key === 'draw') {
+			drawLineIcon(ctx, centerX, centerY, color)
+		} else {
+			drawPhotoIcon(ctx, centerX, centerY, color)
+		}
+	}
+
+	function drawCobbButton (ctx: CanvasRenderingContext2D, x: number, y: number, key: string): void {
+		const active = isCobbSelected(key)
+		drawButtonBackground(ctx, x, y, active ? cobbColor(key) : '#FFFFFF')
+		if (pressedButton === key) {
+			ctx.beginPath()
+			ctx.arc(x + CONTROL_SIZE / 2, y + CONTROL_SIZE / 2, CONTROL_SIZE / 2, 0, Math.PI * 2)
+			ctx.fillStyle = 'rgba(0, 0, 0, 0.08)'
+			ctx.fill()
+		}
+		ctx.fillStyle = active ? '#FFFFFF' : '#1A1D24'
+		ctx.textAlign = 'center'
+		ctx.textBaseline = 'middle'
+		ctx.font = '700 16px sans-serif'
+		ctx.fillText(key, x + CONTROL_SIZE / 2, y + 15)
+		ctx.font = '500 10px sans-serif'
+		ctx.fillText(`cobb${cobbNumber(key)}`, x + CONTROL_SIZE / 2, y + 31)
+	}
+
+	function drawButtonBackground (
+		ctx: CanvasRenderingContext2D,
+		x: number,
+		y: number,
+		fill: string
+	): void {
+		ctx.save()
+		ctx.shadowColor = 'rgba(0, 0, 0, 0.25)'
+		ctx.shadowBlur = 10
+		ctx.shadowOffsetX = 0
+		ctx.shadowOffsetY = 4
+		ctx.beginPath()
+		ctx.arc(x + CONTROL_SIZE / 2, y + CONTROL_SIZE / 2, CONTROL_SIZE / 2, 0, Math.PI * 2)
+		ctx.fillStyle = fill
+		ctx.fill()
+		ctx.restore()
+	}
+
+	function drawDownloadIcon (ctx: CanvasRenderingContext2D, centerX: number, centerY: number, color: string): void {
+		ctx.save()
+		ctx.strokeStyle = color
+		ctx.lineWidth = 1.8
+		ctx.lineCap = 'round'
+		ctx.lineJoin = 'round'
+		ctx.beginPath()
+		ctx.moveTo(centerX, centerY - 8)
+		ctx.lineTo(centerX, centerY + 2)
+		ctx.moveTo(centerX - 3.2, centerY - 1)
+		ctx.lineTo(centerX, centerY + 2)
+		ctx.lineTo(centerX + 3.2, centerY - 1)
+		ctx.stroke()
+		ctx.beginPath()
+		ctx.moveTo(centerX - 6, centerY + 5)
+		ctx.lineTo(centerX - 6, centerY + 7)
+		ctx.quadraticCurveTo(centerX - 6, centerY + 8, centerX - 5, centerY + 8)
+		ctx.lineTo(centerX + 5, centerY + 8)
+		ctx.quadraticCurveTo(centerX + 6, centerY + 8, centerX + 6, centerY + 7)
+		ctx.lineTo(centerX + 6, centerY + 5)
+		ctx.stroke()
+		ctx.restore()
+	}
+
+	function drawLineIcon (ctx: CanvasRenderingContext2D, centerX: number, centerY: number, color: string): void {
+		ctx.save()
+		ctx.strokeStyle = color
+		ctx.fillStyle = color
+		ctx.lineWidth = 1.8
+		ctx.lineCap = 'round'
+		ctx.beginPath()
+		ctx.moveTo(centerX - 6, centerY - 6)
+		ctx.lineTo(centerX + 6, centerY + 6)
+		ctx.stroke()
+		ctx.beginPath()
+		ctx.arc(centerX - 6, centerY - 6, 2.4, 0, Math.PI * 2)
+		ctx.fill()
+		ctx.beginPath()
+		ctx.arc(centerX + 6, centerY + 6, 2.4, 0, Math.PI * 2)
+		ctx.fill()
+		ctx.restore()
+	}
+
+	function drawPhotoIcon (ctx: CanvasRenderingContext2D, centerX: number, centerY: number, color: string): void {
+		ctx.save()
+		ctx.strokeStyle = color
+		ctx.fillStyle = color
+		ctx.lineWidth = 1.8
+		ctx.lineJoin = 'round'
+		ctx.beginPath()
+		roundedRectPath(ctx, centerX - 8, centerY - 7, 16, 14, 2.5)
+		ctx.stroke()
+		ctx.beginPath()
+		ctx.arc(centerX - 4.5, centerY - 3.5, 1.5, 0, Math.PI * 2)
+		ctx.fill()
+		ctx.beginPath()
+		ctx.moveTo(centerX - 7, centerY + 4)
+		ctx.lineTo(centerX - 2.5, centerY)
+		ctx.lineTo(centerX + 0.5, centerY + 2.5)
+		ctx.lineTo(centerX + 3, centerY + 0.2)
+		ctx.lineTo(centerX + 7, centerY + 4)
+		ctx.stroke()
+		ctx.restore()
+	}
+
+	function drawNotice (ctx: CanvasRenderingContext2D): void {
+		const text = noticeText.value
+		ctx.font = '600 15px sans-serif'
+		const maxCardWidth = canvasWidth - 48
+		const textWidth = Math.min(maxCardWidth - 65, ctx.measureText(text).width)
+		const cardWidth = Math.max(180, Math.min(maxCardWidth, textWidth + 65))
+		const cardHeight = 48
+		const cardX = (canvasWidth - cardWidth) / 2
+		const cardY = (canvasHeight - cardHeight) / 2
+		const centerY = cardY + cardHeight / 2
+		ctx.save()
+		ctx.shadowColor = 'rgba(0, 0, 0, 0.3)'
+		ctx.shadowBlur = 40
+		ctx.shadowOffsetY = 16
+		ctx.beginPath()
+		roundedRectPath(ctx, cardX, cardY, cardWidth, cardHeight, 14)
+		ctx.fillStyle = '#1F2937'
+		ctx.fill()
+		ctx.restore()
+		ctx.beginPath()
+		roundedRectPath(ctx, cardX, cardY, cardWidth, cardHeight, 14)
+		ctx.strokeStyle = '#3A4658'
+		ctx.lineWidth = 1
+		ctx.stroke()
+		ctx.beginPath()
+		ctx.arc(cardX + 20, centerY, 4, 0, Math.PI * 2)
+		ctx.fillStyle = '#FF8A50'
+		ctx.fill()
+		ctx.fillStyle = '#FFFFFF'
+		ctx.font = '600 15px sans-serif'
+		ctx.textAlign = 'left'
+		ctx.textBaseline = 'middle'
+		ctx.fillText(text, cardX + 33, centerY)
+	}
+
+	function roundedRectPath (
+		ctx: CanvasRenderingContext2D,
+		x: number,
+		y: number,
+		width: number,
+		height: number,
+		radius: number
+	): void {
+		ctx.moveTo(x + radius, y)
+		ctx.lineTo(x + width - radius, y)
+		ctx.quadraticCurveTo(x + width, y, x + width, y + radius)
+		ctx.lineTo(x + width, y + height - radius)
+		ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height)
+		ctx.lineTo(x + radius, y + height)
+		ctx.quadraticCurveTo(x, y + height, x, y + height - radius)
+		ctx.lineTo(x, y + radius)
+		ctx.quadraticCurveTo(x, y, x + radius, y)
+		ctx.closePath()
+	}
+
+	function cobbIndex (key: string): number {
+		for (let i = 0; i < COBB_KEYS.length; i++) {
+			if (COBB_KEYS[i] === key) {
+				return i
+			}
+		}
+		return -1
+	}
+
+	function cobbNumber (key: string): number {
+		return cobbIndex(key) + 1
+	}
+
+	function cobbColor (key: string): string {
+		if (key === 'A') {
+			return '#315FE8'
+		}
+		if (key === 'B') {
+			return '#5278ED'
+		}
+		if (key === 'C') {
+			return '#7392F2'
+		}
+		return '#96ADF5'
+	}
+
+	function isCobbSelected (key: string): boolean {
+		for (let i = 0; i < selectedKeys.length; i++) {
+			if (selectedKeys[i] === key) {
+				return true
+			}
+		}
+		return false
+	}
+
+	function toggleCobb (key: string): void {
+		const index = cobbIndex(key)
+		if (isCobbSelected(key)) {
+			const nextKeys: string[] = []
+			for (let i = 0; i < selectedKeys.length; i++) {
+				if (selectedKeys[i] !== key) {
+					nextKeys.push(selectedKeys[i])
+				}
+			}
+			selectedKeys = nextKeys
+			cobbLines[index] = []
+		} else {
+			selectedKeys.push(key)
+			cobbLines[index] = createInitialCobbLines(index)
+		}
+		redrawCanvas(false)
+	}
+
+	function toggleAuxiliary (): void {
+		auxiliaryMode = !auxiliaryMode
+		if (auxiliaryMode) {
+			auxiliaryLine = createAuxiliaryLine()
+		} else {
+			auxiliaryLine = createEmptyLine()
+		}
+		redrawCanvas(false)
+	}
+
+	function getTouchPoint (event: TouchEvent): Point {
+		const touch = event.touches[0]
+		// #ifdef MP-WEIXIN
+		return createPoint(touch.x, touch.y)
+		// #endif
+		// #ifndef MP-WEIXIN
+		return createPoint(touch.clientX, touch.clientY)
+		// #endif
+	}
+
+	function onCanvasTouchStart (event: TouchEvent): void {
+		if (event.touches.length === 0) {
+			return
+		}
+		const point = getTouchPoint(event)
+		touchStartX = point.x
+		touchStartY = point.y
+		touchMoved = false
+		pressedButton = ''
+		dragType = 'none'
+
+		const control = hitControlButton(point.x, point.y)
+		if (control.length > 0) {
+			pressedButton = control
+			redrawCanvas(false)
+			return
+		}
+
+		startDrag(point)
+	}
+
+	function onCanvasTouchMove (event: TouchEvent): void {
+		if (event.touches.length === 0) {
+			return
+		}
+		const point = getTouchPoint(event)
+		if (pressedButton.length > 0) {
+			if (Math.abs(point.x - touchStartX) > 4 || Math.abs(point.y - touchStartY) > 4) {
+				touchMoved = true
+			}
+			return
+		}
+		if (dragType === 'none') {
+			return
+		}
+		moveDrag(point)
+		touchMoved = true
+	}
+
+	function onCanvasTouchEnd (): void {
+		if (pressedButton.length > 0) {
+			const control = pressedButton
+			pressedButton = ''
+			redrawCanvas(false)
+			if (!touchMoved) {
+				handleControlButton(control)
+			}
+			return
+		}
+		dragType = 'none'
+		dragCobbIndex = -1
+		dragLineIndex = -1
+		dragEndpointIndex = -1
+	}
+
+	function onCanvasTouchCancel (): void {
+		pressedButton = ''
+		dragType = 'none'
+		dragCobbIndex = -1
+		dragLineIndex = -1
+		dragEndpointIndex = -1
+		redrawCanvas(false)
+	}
+
+	function hitControlButton (x: number, y: number): string {
+		const buttonY = canvasHeight - CONTROL_BOTTOM - CONTROL_SIZE
+		const groupX = canvasWidth - CONTROL_GROUP_WIDTH - 12
+		if (isPointInRect(x, y, 24, buttonY, CONTROL_SIZE, CONTROL_SIZE)) {
+			return 'save'
+		}
+		for (let i = 0; i < BUTTON_KEYS.length; i++) {
+			if (isPointInRect(x, y, groupX + CONTROL_STEP * i, buttonY, CONTROL_SIZE, CONTROL_SIZE)) {
+				return BUTTON_KEYS[i]
+			}
+		}
+		if (isPointInRect(x, y, groupX + CONTROL_STEP * 4, buttonY, CONTROL_SIZE, CONTROL_SIZE)) {
+			return 'draw'
+		}
+		if (isPointInRect(x, y, groupX + CONTROL_STEP * 4, buttonY - CONTROL_SIZE - 12, CONTROL_SIZE, CONTROL_SIZE)) {
+			return 'changePhoto'
+		}
+		return ''
+	}
+
+	function isPointInRect (
+		x: number,
+		y: number,
+		left: number,
+		top: number,
+		width: number,
+		height: number
+	): boolean {
+		return x >= left && x <= left + width && y >= top && y <= top + height
+	}
+
+	function handleControlButton (button: string): void {
+		if (button === 'save') {
+			saveMeasurement()
+		} else if (button === 'draw') {
+			toggleAuxiliary()
+		} else if (button === 'changePhoto') {
+			showPhotoPicker()
+		} else {
+			toggleCobb(button)
+		}
+	}
+
+	function startDrag (point: Point): void {
+		if (auxiliaryMode) {
+			if (nearPoint(point, auxiliaryLine.start, 18)) {
+				beginPointDrag('auxStart', point)
+				return
+			}
+			if (nearPoint(point, auxiliaryLine.end, 18)) {
+				beginPointDrag('auxEnd', point)
+				return
+			}
+		}
+		for (let i = 0; i < COBB_KEYS.length; i++) {
+			if (!isCobbSelected(COBB_KEYS[i])) {
+				continue
+			}
+			const index = cobbIndex(COBB_KEYS[i])
+			for (let lineIndex = 0; lineIndex < cobbLines[index].length; lineIndex++) {
+				const line = cobbLines[index][lineIndex]
+				if (nearPoint(point, line.start, 18)) {
+					beginCobbPointDrag(index, lineIndex, 0, point)
+					return
+				}
+				if (nearPoint(point, line.end, 18)) {
+					beginCobbPointDrag(index, lineIndex, 1, point)
+					return
+				}
+			}
+		}
+		if (auxiliaryMode && nearLine(point, auxiliaryLine, 14)) {
+			beginWholeDrag('aux', point)
+			return
+		}
+		if (nearLine(point, centerLine, 14) || nearLabel(point, centerLine.start.x, centerLine.start.y - 12, 30)) {
+			beginWholeDrag('center', point)
+			return
+		}
+		if (nearLine(point, pelvisLine, 14) || nearLabel(point, pelvisLine.start.x + 20, pelvisLine.start.y - 12, 30)) {
+			beginWholeDrag('pelvis', point)
+			return
+		}
+		for (let i = 0; i < COBB_KEYS.length; i++) {
+			if (!isCobbSelected(COBB_KEYS[i])) {
+				continue
+			}
+			const index = cobbIndex(COBB_KEYS[i])
+			for (let lineIndex = 0; lineIndex < cobbLines[index].length; lineIndex++) {
+				if (nearLine(point, cobbLines[index][lineIndex], 14)) {
+					dragType = 'cobb'
+					dragCobbIndex = index
+					dragLineIndex = lineIndex
+					lastDragX = point.x
+					lastDragY = point.y
+					return
+				}
+			}
+		}
+	}
+
+	function beginPointDrag (type: string, point: Point): void {
+		dragType = type
+		lastDragX = point.x
+		lastDragY = point.y
+	}
+
+	function beginCobbPointDrag (cobbIndexValue: number, lineIndex: number, endpoint: number, point: Point): void {
+		dragType = 'cobbPoint'
+		dragCobbIndex = cobbIndexValue
+		dragLineIndex = lineIndex
+		dragEndpointIndex = endpoint
+		lastDragX = point.x
+		lastDragY = point.y
+	}
+
+	function beginWholeDrag (type: string, point: Point): void {
+		dragType = type
+		lastDragX = point.x
+		lastDragY = point.y
+	}
+
+	function moveDrag (point: Point): void {
+		if (dragType === 'auxStart') {
+			auxiliaryLine.start = clampPoint(point)
+		} else if (dragType === 'auxEnd') {
+			auxiliaryLine.end = clampPoint(point)
+		} else if (dragType === 'cobbPoint') {
+			if (dragEndpointIndex === 0) {
+				cobbLines[dragCobbIndex][dragLineIndex].start = clampPoint(point)
+			} else {
+				cobbLines[dragCobbIndex][dragLineIndex].end = clampPoint(point)
+			}
+		} else {
+			const deltaX = point.x - lastDragX
+			const deltaY = point.y - lastDragY
+			if (dragType === 'aux') {
+				translateLine(auxiliaryLine, deltaX, deltaY)
+			} else if (dragType === 'center') {
+				translateLine(centerLine, deltaX, deltaY)
+			} else if (dragType === 'pelvis') {
+				translateLine(pelvisLine, deltaX, deltaY)
+			} else if (dragType === 'cobb') {
+				translateLine(cobbLines[dragCobbIndex][dragLineIndex], deltaX, deltaY)
+			}
+			lastDragX = point.x
+			lastDragY = point.y
+		}
+		redrawCanvas(false)
+	}
+
+	function clampPoint (point: Point): Point {
+		return createPoint(
+			Math.max(14, Math.min(canvasWidth - 14, point.x)),
+			Math.max(14, Math.min(canvasHeight - CONTROL_SIZE - CONTROL_BOTTOM - 14, point.y))
+		)
+	}
+
+	function translateLine (line: LineState, deltaX: number, deltaY: number): void {
+		const minX = Math.min(line.start.x, line.end.x)
+		const maxX = Math.max(line.start.x, line.end.x)
+		const minY = Math.min(line.start.y, line.end.y)
+		const maxY = Math.max(line.start.y, line.end.y)
+		const safeX = Math.max(14 - minX, Math.min(canvasWidth - 14 - maxX, deltaX))
+		const safeY = Math.max(14 - minY, Math.min(canvasHeight - CONTROL_SIZE - CONTROL_BOTTOM - 14 - maxY, deltaY))
+		line.start.x += safeX
+		line.end.x += safeX
+		line.start.y += safeY
+		line.end.y += safeY
+	}
+
+	function nearPoint (point: Point, target: Point, radius: number): boolean {
+		return distance(point, target) <= radius
+	}
+
+	function nearLine (point: Point, line: LineState, radius: number): boolean {
+		return distanceToSegment(line.start, line.end, point.x, point.y) <= radius
+	}
+
+	function nearLabel (point: Point, labelX: number, labelY: number, radius: number): boolean {
+		return Math.abs(point.x - labelX) <= radius && Math.abs(point.y - labelY) <= radius
+	}
+
+	function distance (first: Point, second: Point): number {
+		const deltaX = first.x - second.x
+		const deltaY = first.y - second.y
+		return Math.sqrt(deltaX * deltaX + deltaY * deltaY)
+	}
+
+	function distanceToSegment (start: Point, end: Point, x: number, y: number): number {
+		const segmentX = end.x - start.x
+		const segmentY = end.y - start.y
+		const lengthSquared = segmentX * segmentX + segmentY * segmentY
+		if (lengthSquared === 0) {
+			return Math.sqrt((x - start.x) * (x - start.x) + (y - start.y) * (y - start.y))
+		}
+		let ratio = ((x - start.x) * segmentX + (y - start.y) * segmentY) / lengthSquared
+		ratio = Math.max(0, Math.min(1, ratio))
+		const nearestX = start.x + ratio * segmentX
+		const nearestY = start.y + ratio * segmentY
+		return Math.sqrt((x - nearestX) * (x - nearestX) + (y - nearestY) * (y - nearestY))
+	}
+
+	function angleBetweenLines (first: LineState, second: LineState): number {
+		const firstAngle = Math.atan2(first.end.y - first.start.y, first.end.x - first.start.x)
+		const secondAngle = Math.atan2(second.end.y - second.start.y, second.end.x - second.start.x)
+		let delta = Math.abs(firstAngle - secondAngle) % Math.PI
+		if (delta > Math.PI / 2) {
+			delta = Math.PI - delta
+		}
+		const degrees = delta * 180 / Math.PI
+		return Math.max(0, Math.min(90, degrees))
+	}
+
+	function formatAngle (value: number): string {
+		let text = value.toFixed(2)
+		while (text.endsWith('0')) {
+			text = text.substring(0, text.length - 1)
+		}
+		if (text.endsWith('.')) {
+			text = text.substring(0, text.length - 1)
+		}
+		return text
+	}
+
+	function saveMeasurement (): void {
+		if (selectedKeys.length === 0 && !auxiliaryMode) {
+			showNotice('请选择参考线或辅助线')
+			return
+		}
+		if (renderingContext == null || canvasElement == null) {
+			showNotice('图片生成失败，请稍后重试')
+			return
+		}
+		redrawCanvas(true)
+		setTimeout(() => {
+			exportCanvasByDataUrl()
+		}, 80)
+	}
+
+	function exportCanvasByDataUrl (): void {
+		if (canvasContext == null) {
+			exportCanvasByTempFile()
+			return
+		}
+		try {
+			const dataUrl = canvasContext.toDataURL('image/png')
+			const separatorIndex = dataUrl.indexOf(',')
+			if (separatorIndex < 0 || separatorIndex >= dataUrl.length - 1) {
+				exportCanvasByTempFile()
+				return
+			}
+			const base64 = dataUrl.substring(separatorIndex + 1)
+			const filePath = `${uni.env.USER_DATA_PATH}/spine-angle-${Date.now()}.png`
+			uni.getFileSystemManager().writeFile({
+				filePath: filePath,
+				data: base64,
+				encoding: 'base64',
+				success: () => {
+					saveToAlbum(filePath)
+				},
+				fail: () => {
+					exportCanvasByTempFile()
+				}
+			} as WriteFileOptions)
+		} catch (error) {
+			exportCanvasByTempFile()
+		}
+	}
+
+	function exportCanvasByTempFile (): void {
+		if (canvasElement == null) {
+			redrawCanvas(false)
+			showNotice('图片生成失败，请稍后重试')
+			return
+		}
+		wx.canvasToTempFilePath({
+			canvas: canvasElement,
+			x: 0,
+			y: 0,
+			width: canvasWidth,
+			height: canvasHeight,
+			destWidth: Math.round(canvasWidth * 2),
+			destHeight: Math.round(canvasHeight * 2),
+			success: (res) => {
+				saveToAlbum(res.tempFilePath)
+			},
+			fail: () => {
+				redrawCanvas(false)
+				showNotice('图片生成失败，请稍后重试')
+			}
+		})
+	}
+
+	function saveToAlbum (filePath: string): void {
+		wx.saveImageToPhotosAlbum({
+			filePath: filePath,
+			success: () => {
+				showNotice('保存成功')
+			},
+			fail: () => {
+				redrawCanvas(false)
+				showNotice('保存失败，请允许访问相册后重试')
+			}
+		})
+	}
+
+	function showNotice (message: string): void {
+		if (message.length === 0) {
+			return
+		}
+		noticeText.value = message
+		noticeVisible.value = true
+		redrawCanvas(false)
+		if (noticeTimer >= 0) {
+			clearTimeout(noticeTimer)
+		}
+		noticeTimer = setTimeout(() => {
+			noticeVisible.value = false
+			noticeTimer = -1
+			redrawCanvas(false)
+		}, 2400)
+	}
+</script>
+
+<style lang="scss">
+	.page {
+		display: flex;
+		flex-direction: column;
+		height: 100vh;
+		background: #F7F8FA;
+	}
+
+	.safe-nav {
+		flex-shrink: 0;
+		background: #FFFFFF;
+	}
+
+	.nav-row {
+		height: 56px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 16px;
+		padding-right: 16px;
+	}
+
+	.back-button {
+		width: 32px;
+		height: 32px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 16px;
+		background: #F3F4F6;
+		flex-shrink: 0;
+	}
+
+	.back-glyph {
+		margin-top: -3px;
+		font-size: 28px;
+		line-height: 28px;
+		color: #1A1D24;
+	}
+
+	.nav-title {
+		flex: 1;
+		text-align: center;
+		font-size: 18px;
+		font-weight: 600;
+		line-height: 22px;
+		color: #1A1D24;
+	}
+
+	.nav-placeholder {
+		width: 32px;
+		height: 32px;
+		flex-shrink: 0;
+	}
+
+	.content {
+		display: flex;
+		flex: 1;
+		min-height: 0;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 24px;
+		padding-left: 24px;
+		padding-right: 24px;
+		padding-bottom: 24px;
+	}
+
+	.capture-target {
+		width: 212px;
+		height: 222px;
+		margin-bottom: -36px;
+		flex-shrink: 0;
+		overflow: visible;
+	}
+
+	.capture-icon {
+		width: 212px;
+		height: 222px;
+	}
+
+	.capture-hint {
+		font-size: 15px;
+		font-weight: 400;
+		line-height: 18px;
+		color: #9CA3AF;
+		text-align: center;
+	}
+
+	.editor-stage {
+		position: relative;
+		display: flex;
+		flex: 1;
+		min-height: 0;
+		overflow: hidden;
+		background: #11131A;
+	}
+
+	.measure-canvas {
+		position: absolute;
+		left: 0;
+		top: 0;
+		width: 100%;
+		height: 100%;
+	}
+</style>

@@ -82,6 +82,14 @@
 			}
 		},
 		{
+			"path": "pages/spine-angle-measure/spine-angle-measure",
+			"style": {
+				"navigationBarTitleText": "脊柱角度测量",
+				"navigationStyle": "custom",
+				"backgroundColor": "#F7F8FA"
+			}
+		},
+		{
 			"path": "pages/my-plans/my-plans",
 			"style": {
 				"navigationBarTitleText": "我的方案",

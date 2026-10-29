@@ -526,7 +526,7 @@
 		ctx.lineWidth = 1.8
 		ctx.lineJoin = 'round'
 		ctx.beginPath()
-		ctx.roundedRect(centerX - 8, centerY - 7, 16, 14, 2.5)
+		roundedRectPath(ctx, centerX - 8, centerY - 7, 16, 14, 2.5)
 		ctx.stroke()
 		ctx.beginPath()
 		ctx.arc(centerX - 4.5, centerY - 3.5, 1.5, 0, Math.PI * 2)
