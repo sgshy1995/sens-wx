@@ -29,10 +29,10 @@
 						<text class="info-value">康复中心官方账户</text>
 					</view>
 					<view class="divider"></view>
-					<view class="info-row">
+					<view class="info-row info-row-stack">
 						<text class="info-label">订单编号</text>
-						<view class="value-group">
-							<text class="info-value info-number">{{ orderNo }}</text>
+						<view class="number-line">
+							<text class="info-value number-value">{{ orderNo }}</text>
 							<text class="copy-text" @click="copyText(orderNo)">复制</text>
 						</view>
 					</view>
@@ -145,13 +145,14 @@
 	.section-title { font-size: 16px; font-weight: 700; color: #1A1D24; }
 	.info-card { padding: 4px 16px; box-sizing: border-box; background: #FFFFFF; border: 1px solid #EEF0F3; border-radius: 16px; box-shadow: 0 4px 16px rgba(23, 26, 36, 0.04); }
 	.info-row { min-height: 43px; display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 12px 0; box-sizing: border-box; }
+	.info-row-stack { flex-direction: column; align-items: flex-start; gap: 7px; }
 	.info-label { font-size: 13px; color: #9CA3AF; }
 	.info-value { font-size: 13px; font-weight: 500; color: #1A1D24; }
-	.info-number { font-family: Inter; }
 	.info-success { color: #FF6B35; }
 	.divider { width: 100%; height: 1px; background: #F1F3F5; }
-	.value-group { display: flex; flex-direction: row; align-items: center; gap: 6px; }
-	.copy-text { font-size: 12px; font-weight: 500; color: #FF6B35; }
+	.number-line { width: 100%; display: flex; flex-direction: row; align-items: flex-start; justify-content: flex-end; gap: 8px; }
+	.number-value { flex: 0 1 auto; min-width: 0; max-width: calc(100% - 42px); font-family: Inter; font-size: 12px; line-height: 18px; text-align: right; word-break: break-all; }
+	.copy-text { flex-shrink: 0; padding-top: 1px; font-size: 12px; font-weight: 500; color: #FF6B35; }
 	.help-card { height: 56px; display: flex; flex-direction: row; align-items: center; gap: 10px; padding: 0 16px; box-sizing: border-box; background: #FFFFFF; border: 1px solid #EEF0F3; border-radius: 16px; box-shadow: 0 4px 16px rgba(23, 26, 36, 0.04); }
 	.help-icon-wrap { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: #FFF3EC; border-radius: 8px; }
 	.help-icon { width: 16px; height: 16px; }

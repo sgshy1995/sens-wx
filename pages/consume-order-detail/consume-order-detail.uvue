@@ -34,10 +34,10 @@
 						<text class="info-value">{{ paymentType }}</text>
 					</view>
 					<view class="divider"></view>
-					<view class="info-row">
+					<view class="info-row info-row-stack">
 						<text class="info-label">交易单号</text>
-						<view class="value-group">
-							<text class="info-value info-number">{{ tradeNo }}</text>
+						<view class="number-line">
+							<text class="info-value number-value">{{ tradeNo }}</text>
 							<text class="copy-text" @click="copyText(tradeNo)">复制</text>
 						</view>
 					</view>
@@ -85,6 +85,9 @@
 	const orderTime = ref('')
 	const orderId = ref('')
 	const sourceOrderNo = ref('')
+	const sourceType = ref('balance')
+	const relatedKind = ref('')
+	const relatedOrderNo = ref('')
 
 	onLoad((options) => {
 		const sys = uni.getSystemInfoSync()
@@ -98,10 +101,46 @@
 			sourceOrderNo.value = no as string
 			tradeNo.value = no as string
 		}
+		const source = options['source']
+		if (source != null) {
+			sourceType.value = source as string
+		}
 		loadOrder()
 	})
 
 	function loadOrder (): void {
+		if (sourceType.value === 'wechat') {
+			loadWechatOrder()
+			return
+		}
+		loadBalanceOrder()
+	}
+
+	function loadWechatOrder (): void {
+		get('/payments/orders/' + encodeURIComponent(sourceOrderNo.value) + '/detail', (res) => {
+			if (res.getNumber('code', 0) !== 200) {
+				return
+			}
+			const order = res.getJSON('data')
+			if (order == null) {
+				return
+			}
+			const outTradeNo = order.getString('order_no') ?? sourceOrderNo.value
+			const courseTitle = order.getString('course_title') ?? '康复课程'
+			const stageTitle = order.getString('stage_title') ?? ''
+			sourceOrderNo.value = outTradeNo
+			relatedOrderNo.value = outTradeNo
+			relatedKind.value = 'wechat'
+			tradeNo.value = order.getString('payment_no') ?? outTradeNo
+			paymentType.value = paymentTypeText(order.getNumber('payment_type', 1))
+			orderTime.value = formatOrderTime(order.getString('payment_time') ?? '')
+			amountText.value = formatOrderAmount(order.getString('payment_num') ?? '0', false)
+			consumeType.value = '方案购买'
+			productName.value = stageTitle.length > 0 ? courseTitle + ' · ' + stageTitle : courseTitle
+		}, () => {})
+	}
+
+	function loadBalanceOrder (): void {
 		get('/top_up_order?order_type=payment_time&order=desc', (res) => {
 			if (res.getNumber('code', 0) !== 200) {
 				return
@@ -122,6 +161,12 @@
 			paymentType.value = paymentTypeText(order.getNumber('payment_type', 0))
 			consumeType.value = reason.length > 0 ? reason : '余额消费'
 			productName.value = reason.length > 0 ? reason : '康复服务'
+			relatedOrderNo.value = sourceOrderNo.value
+			if (reason.indexOf('课程') >= 0) {
+				relatedKind.value = 'course'
+			} else if (reason.indexOf('器材') >= 0) {
+				relatedKind.value = 'equipment'
+			}
 			loadProductInfo(reason)
 		}, () => {})
 	}
@@ -157,7 +202,14 @@
 	}
 
 	function viewRelatedOrder (): void {
-		uni.showToast({ title: '关联订单功能暂未开放', icon: 'none' })
+		if (relatedKind.value.length === 0 || relatedOrderNo.value.length === 0) {
+			uni.showToast({ title: '未找到关联订单', icon: 'none' })
+			return
+		}
+		uni.navigateTo({
+			url: '/pages/related-order/related-order?kind=' + encodeURIComponent(relatedKind.value)
+				+ '&orderNo=' + encodeURIComponent(relatedOrderNo.value)
+		})
 	}
 
 	function goBack (): void {
@@ -184,14 +236,15 @@
 	.section-title { font-size: 16px; font-weight: 700; color: #1A1D24; }
 	.info-card { padding: 4px 16px; box-sizing: border-box; background: #FFFFFF; border: 1px solid #EEF0F3; border-radius: 16px; box-shadow: 0 4px 16px rgba(23, 26, 36, 0.04); }
 	.info-row { min-height: 43px; display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 12px 0; box-sizing: border-box; }
+	.info-row-stack { flex-direction: column; align-items: flex-start; gap: 7px; }
 	.info-label { font-size: 13px; color: #9CA3AF; }
 	.info-value { font-size: 13px; font-weight: 500; color: #1A1D24; }
 	.info-product { max-width: 205px; text-align: right; }
-	.info-number { font-family: Inter; }
 	.info-success { color: #FF6B35; }
 	.divider { width: 100%; height: 1px; background: #F1F3F5; }
-	.value-group { display: flex; flex-direction: row; align-items: center; gap: 6px; }
-	.copy-text { font-size: 12px; font-weight: 500; color: #FF6B35; }
+	.number-line { width: 100%; display: flex; flex-direction: row; align-items: flex-start; justify-content: flex-end; gap: 8px; }
+	.number-value { flex: 0 1 auto; min-width: 0; max-width: calc(100% - 42px); font-family: Inter; font-size: 12px; line-height: 18px; text-align: right; word-break: break-all; }
+	.copy-text { flex-shrink: 0; padding-top: 1px; font-size: 12px; font-weight: 500; color: #FF6B35; }
 	.help-card { height: 56px; display: flex; flex-direction: row; align-items: center; gap: 10px; padding: 0 16px; box-sizing: border-box; background: #FFFFFF; border: 1px solid #EEF0F3; border-radius: 16px; box-shadow: 0 4px 16px rgba(23, 26, 36, 0.04); }
 	.help-icon-wrap { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: #FFF3EC; border-radius: 8px; }
 	.help-icon { width: 16px; height: 16px; }

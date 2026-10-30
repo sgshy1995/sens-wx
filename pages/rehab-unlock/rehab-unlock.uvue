@@ -77,6 +77,9 @@
 	const loading = ref(true)
 	const paying = ref(false)
 	const returnToFilter = ref(false)
+	let paymentPollTimer = -1
+	let paymentPollCount = 0
+	let activeOutTradeNo = ''
 
 	onLoad((options) => {
 		const sys = uni.getSystemInfoSync()
@@ -94,6 +97,10 @@
 			returnToFilter.value = (returnToFilterOption as string) === '1'
 		}
 		loadUnlockInfo()
+	})
+
+	onUnload(() => {
+		stopPaymentPolling()
 	})
 
 	function loadUnlockInfo (): void {
@@ -157,12 +164,20 @@
 			uni.showToast({ title: '余额不足，请先充值或选择微信支付', icon: 'none' })
 			return
 		}
+		if (paymentType.value === 1) {
+			createWechatPayment()
+			return
+		}
+		payWithBalance()
+	}
+
+	function payWithBalance (): void {
 		paying.value = true
 		uni.showLoading({ title: '支付中', mask: true })
 		const body = new UTSJSONObject()
 		body.set('course_id', courseId.value)
 		body.set('stage_id', stageId.value)
-		body.set('payment_type', paymentType.value)
+		body.set('payment_type', 0)
 		post('/rehab_combination_course/unlock', body, (res) => {
 			finishPay()
 			if (res.getNumber('code', 0) !== 200) {
@@ -174,29 +189,187 @@
 				uni.showToast({ title: '支付结果异常', icon: 'none' })
 				return
 			}
-			const amount = data.getString('price') ?? price.value
-			const orderNo = data.getString('order_no') ?? ''
-			const paymentTime = data.getString('payment_time') ?? ''
-			const paymentTypeText = data.getString('payment_type_text') ?? '余额支付'
-			const resultCourseTitle = data.getString('course_title') ?? courseTitle.value
-			const resultStageTitle = data.getString('stage_title') ?? stageTitle.value
-			uni.redirectTo({
-				url: '/pages/rehab-unlock-success/rehab-unlock-success'
-					+ '?amount=' + encodeURIComponent(amount)
-					+ '&orderNo=' + encodeURIComponent(orderNo)
-					+ '&time=' + encodeURIComponent(paymentTime)
-					+ '&paymentTypeText=' + encodeURIComponent(paymentTypeText)
-					+ '&courseTitle=' + encodeURIComponent(resultCourseTitle)
-					+ '&stageTitle=' + encodeURIComponent(resultStageTitle)
-					+ (returnToFilter.value ? '&returnToFilter=1' : '')
-			})
+			showUnlockSuccess(data, price.value, '余额支付')
 		}, (msg) => {
 			finishPay()
 			uni.showToast({ title: msg, icon: 'none' })
 		})
 	}
 
+	function createWechatPayment (): void {
+		paying.value = true
+		uni.showLoading({ title: '创建支付订单', mask: true })
+		uni.login({
+			provider: 'weixin',
+			success: (loginRes) => {
+				const loginCode = loginRes.code
+				if (loginCode.length === 0) {
+					finishPay()
+					uni.showToast({ title: '获取微信登录凭证失败', icon: 'none' })
+					return
+				}
+				submitWechatPaymentOrder(loginCode)
+			},
+			fail: () => {
+				finishPay()
+				uni.showToast({ title: '获取微信登录凭证失败', icon: 'none' })
+			}
+		})
+	}
+
+	function submitWechatPaymentOrder (loginCode: string): void {
+		const body = new UTSJSONObject()
+		body.set('course_id', courseId.value)
+		body.set('stage_id', stageId.value)
+		body.set('login_code', loginCode)
+		post('/payments/rehab-stage/orders', body, (res) => {
+			if (res.getNumber('code', 0) !== 200) {
+				finishPay()
+				uni.showToast({ title: res.getString('message') ?? '创建支付订单失败', icon: 'none' })
+				return
+			}
+			const data = res.getJSON('data')
+			if (data == null) {
+				finishPay()
+				uni.showToast({ title: '支付订单数据为空', icon: 'none' })
+				return
+			}
+			if (data.getString('status') === 'PAID') {
+				finishPay()
+				showUnlockSuccess(data, price.value, '微信支付')
+				return
+			}
+			const outTradeNo = data.getString('out_trade_no') ?? ''
+			const payment = data.getJSON('payment')
+			if (outTradeNo.length === 0 || payment == null) {
+				finishPay()
+				uni.showToast({ title: '微信支付参数不完整', icon: 'none' })
+				return
+			}
+			requestWechatPayment(outTradeNo, payment)
+		}, (msg) => {
+			finishPay()
+			uni.showToast({ title: msg, icon: 'none' })
+		})
+	}
+
+	function requestWechatPayment (outTradeNo: string, payment: UTSJSONObject): void {
+		uni.hideLoading()
+		// #ifdef MP-WEIXIN
+		uni.requestPayment({
+			provider: 'wxpay',
+			orderInfo: '',
+			timeStamp: payment.getString('time_stamp') ?? '',
+			nonceStr: payment.getString('nonce_str') ?? '',
+			package: payment.getString('package') ?? '',
+			signType: 'RSA',
+			paySign: payment.getString('pay_sign') ?? '',
+			success: () => {
+				startPaymentPolling(outTradeNo)
+			},
+			fail: (error) => {
+				finishPay()
+				const message = error.errMsg ?? ''
+				if (message.indexOf('cancel') >= 0) {
+					uni.showToast({ title: '已取消支付', icon: 'none' })
+				} else {
+					uni.showToast({ title: '微信支付未完成', icon: 'none' })
+				}
+			}
+		})
+		// #endif
+		// #ifndef MP-WEIXIN
+		finishPay()
+		uni.showToast({ title: '当前平台不支持微信小程序支付', icon: 'none' })
+		// #endif
+	}
+
+	function startPaymentPolling (outTradeNo: string): void {
+		stopPaymentPolling()
+		activeOutTradeNo = outTradeNo
+		paymentPollCount = 0
+		uni.showLoading({ title: '确认支付结果', mask: true })
+		schedulePaymentPoll()
+	}
+
+	function schedulePaymentPoll (): void {
+		paymentPollTimer = setTimeout(pollPaymentStatus, 1200)
+	}
+
+	function pollPaymentStatus (): void {
+		paymentPollTimer = -1
+		if (activeOutTradeNo.length === 0) {
+			return
+		}
+		if (paymentPollCount >= 60) {
+			finishPay()
+			uni.showToast({ title: '支付结果确认中，请稍后查看订单', icon: 'none' })
+			return
+		}
+		paymentPollCount++
+		const outTradeNo = activeOutTradeNo
+		get('/payments/orders/' + encodeURIComponent(outTradeNo) + '/status', (res) => {
+			if (activeOutTradeNo !== outTradeNo) {
+				return
+			}
+			if (res.getNumber('code', 0) !== 200) {
+				schedulePaymentPoll()
+				return
+			}
+			const data = res.getJSON('data')
+			if (data == null) {
+				schedulePaymentPoll()
+				return
+			}
+			const status = data.getString('status') ?? 'PENDING'
+			if (status === 'PAID') {
+				finishPay()
+				showUnlockSuccess(data, price.value, '微信支付')
+				return
+			}
+			if (status === 'CLOSED' || status === 'REFUNDED') {
+				finishPay()
+				uni.showToast({ title: status === 'CLOSED' ? '支付订单已关闭' : '支付订单已退款', icon: 'none' })
+				return
+			}
+			schedulePaymentPoll()
+		}, () => {
+			if (activeOutTradeNo === outTradeNo) {
+				schedulePaymentPoll()
+			}
+		})
+	}
+
+	function showUnlockSuccess (data: UTSJSONObject, fallbackAmount: string, fallbackPaymentTypeText: string): void {
+		const amount = data.getString('amount') ?? fallbackAmount
+		const orderNo = data.getString('order_no') ?? (data.getString('out_trade_no') ?? '')
+		const paymentTime = data.getString('payment_time') ?? ''
+		const paymentTypeText = data.getString('payment_type_text') ?? fallbackPaymentTypeText
+		const resultCourseTitle = data.getString('course_title') ?? courseTitle.value
+		const resultStageTitle = data.getString('stage_title') ?? stageTitle.value
+		uni.redirectTo({
+			url: '/pages/rehab-unlock-success/rehab-unlock-success'
+				+ '?amount=' + encodeURIComponent(amount)
+				+ '&orderNo=' + encodeURIComponent(orderNo)
+				+ '&time=' + encodeURIComponent(paymentTime)
+				+ '&paymentTypeText=' + encodeURIComponent(paymentTypeText)
+				+ '&courseTitle=' + encodeURIComponent(resultCourseTitle)
+				+ '&stageTitle=' + encodeURIComponent(resultStageTitle)
+				+ (returnToFilter.value ? '&returnToFilter=1' : '')
+		})
+	}
+
+	function stopPaymentPolling (): void {
+		if (paymentPollTimer >= 0) {
+			clearTimeout(paymentPollTimer)
+			paymentPollTimer = -1
+		}
+		activeOutTradeNo = ''
+		paymentPollCount = 0
+	}
+
 	function finishPay (): void {
+		stopPaymentPolling()
 		paying.value = false
 		uni.hideLoading()
 	}

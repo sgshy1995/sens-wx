@@ -1,0 +1,488 @@
+<template>
+	<view class="page">
+		<view class="hero">
+			<view class="safe-nav" :style="{ paddingTop: statusBarHeight + 'px' }">
+				<view class="nav-row">
+					<view class="back-button" @click="goBack">
+						<text class="back-glyph">‹</text>
+					</view>
+					<text class="nav-title">关联订单</text>
+					<view class="nav-placeholder"></view>
+				</view>
+			</view>
+			<view class="amount-area">
+				<text class="amount-label">订单金额</text>
+				<text class="amount-value">¥{{ amountText }}</text>
+				<view class="status-pill">
+					<text class="status-text">{{ statusText }}</text>
+				</view>
+			</view>
+		</view>
+
+		<scroll-view class="content-scroll" scroll-y>
+			<view class="content-inner">
+				<text class="section-title">订单信息</text>
+				<view class="info-card">
+					<view class="info-row">
+						<text class="info-label">订单类型</text>
+						<text class="info-value">{{ orderTypeText }}</text>
+					</view>
+					<view class="divider"></view>
+					<view class="info-row">
+						<text class="info-label">商品名称</text>
+						<text class="info-value info-product">{{ productName }}</text>
+					</view>
+					<view class="divider"></view>
+					<view class="info-row info-row-stack">
+						<text class="info-label">订单编号</text>
+						<view class="number-line">
+							<text class="info-value number-value">{{ orderNo }}</text>
+							<text class="copy-text" @click="copyText(orderNo)">复制</text>
+						</view>
+					</view>
+					<view class="divider"></view>
+					<view class="info-row info-row-stack">
+						<text class="info-label">交易单号</text>
+						<view class="number-line">
+							<text class="info-value number-value">{{ tradeNo }}</text>
+							<text class="copy-text" @click="copyText(tradeNo)">复制</text>
+						</view>
+					</view>
+					<view class="divider"></view>
+					<view class="info-row">
+						<text class="info-label">支付方式</text>
+						<text class="info-value">{{ paymentType }}</text>
+					</view>
+					<view class="divider"></view>
+					<view class="info-row">
+						<text class="info-label">下单时间</text>
+						<text class="info-value">{{ orderTime }}</text>
+					</view>
+					<view class="divider"></view>
+					<view class="info-row">
+						<text class="info-label">支付时间</text>
+						<text class="info-value">{{ paymentTime }}</text>
+					</view>
+				</view>
+
+				<view v-if="kind === 'equipment' && shippingAddress.length > 0" class="info-card shipping-card">
+					<view class="info-row">
+						<text class="info-label">收货人</text>
+						<text class="info-value">{{ shippingName }}</text>
+					</view>
+					<view class="divider"></view>
+					<view class="info-row">
+						<text class="info-label">联系电话</text>
+						<text class="info-value">{{ shippingPhone }}</text>
+					</view>
+					<view class="divider"></view>
+					<view class="info-row address-row">
+						<text class="info-label">收货地址</text>
+						<text class="info-value address-value">{{ shippingAddress }}</text>
+					</view>
+				</view>
+
+				<view v-if="canViewPlan" class="action-button" @click="viewMyPlans">
+					<text class="action-text">查看我的方案</text>
+				</view>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { formatMoney } from '../../common/money'
+	import {
+		courseProductName,
+		equipmentProductName,
+		formatOrderTime,
+		paymentTypeText
+	} from '../../common/order-detail'
+	import { get } from '../../common/request'
+
+	const statusBarHeight = ref(24)
+	const kind = ref('')
+	const orderNo = ref('')
+	const orderTypeText = ref('订单')
+	const productName = ref('康复服务')
+	const tradeNo = ref('')
+	const paymentType = ref('余额支付')
+	const orderTime = ref('--')
+	const paymentTime = ref('--')
+	const statusText = ref('已完成')
+	const amountText = ref('0.00')
+	const shippingName = ref('')
+	const shippingPhone = ref('')
+	const shippingAddress = ref('')
+	const canViewPlan = ref(false)
+
+	onLoad((options) => {
+		const sys = uni.getSystemInfoSync()
+		statusBarHeight.value = sys.statusBarHeight
+		const kindOption = options['kind']
+		if (kindOption != null) {
+			kind.value = kindOption as string
+		}
+		const orderNoOption = options['orderNo']
+		if (orderNoOption != null) {
+			orderNo.value = orderNoOption as string
+		}
+		loadOrder()
+	})
+
+	function loadOrder (): void {
+		if (orderNo.value.length === 0) {
+			uni.showToast({ title: '缺少订单参数', icon: 'none' })
+			return
+		}
+		if (kind.value === 'wechat') {
+			loadWechatOrder()
+			return
+		}
+		if (kind.value === 'equipment') {
+			loadEquipmentOrder()
+			return
+		}
+		loadCourseOrder()
+	}
+
+	function loadWechatOrder (): void {
+		get('/payments/orders/' + encodeURIComponent(orderNo.value) + '/detail', (res) => {
+			if (res.getNumber('code', 0) !== 200) {
+				showLoadError(res.getString('message') ?? '关联订单加载失败')
+				return
+			}
+			const data = res.getJSON('data')
+			if (data == null) {
+				showLoadError('关联订单加载失败')
+				return
+			}
+			const courseTitle = data.getString('course_title') ?? '康复课程'
+			const stageTitle = data.getString('stage_title') ?? ''
+			orderTypeText.value = '组合康复阶段课程'
+			productName.value = stageTitle.length > 0 ? courseTitle + ' · ' + stageTitle : courseTitle
+			orderNo.value = data.getString('order_no') ?? orderNo.value
+			tradeNo.value = data.getString('payment_no') ?? orderNo.value
+			paymentType.value = paymentTypeText(data.getNumber('payment_type', 1))
+			orderTime.value = formatOrderTime(data.getString('order_time') ?? data.getString('payment_time') ?? '')
+			paymentTime.value = formatOrderTime(data.getString('payment_time') ?? '')
+			statusText.value = data.getString('status') === 'PAID' ? '交易成功' : '订单已关闭'
+			amountText.value = formatMoney(Math.abs(Number(data.getString('payment_num') ?? '0')).toString(), 2)
+			canViewPlan.value = true
+		}, () => {
+			showLoadError('关联订单加载失败')
+		})
+	}
+
+	function loadCourseOrder (): void {
+		get('/course_order/order_no/' + encodeURIComponent(orderNo.value), (res) => {
+			if (res.getNumber('code', 0) !== 200) {
+				showLoadError(res.getString('message') ?? '课程订单加载失败')
+				return
+			}
+			const data = res.getJSON('data')
+			if (data == null) {
+				showLoadError('课程订单加载失败')
+				return
+			}
+			orderTypeText.value = '课程订单'
+			productName.value = courseProductName(data)
+			orderNo.value = data.getString('order_no') ?? orderNo.value
+			tradeNo.value = data.getString('payment_no') ?? orderNo.value
+			paymentType.value = paymentTypeText(data.getNumber('payment_type', 0))
+			orderTime.value = formatOrderTime(data.getString('order_time') ?? '')
+			paymentTime.value = formatOrderTime(data.getString('payment_time') ?? '')
+			statusText.value = orderStatusText(data.getNumber('status', 0))
+			amountText.value = formatMoney(Math.abs(Number(data.getString('order_prices') ?? data.getString('payment_num') ?? '0')).toString(), 2)
+			canViewPlan.value = true
+		}, () => {
+			showLoadError('课程订单加载失败')
+		})
+	}
+
+	function loadEquipmentOrder (): void {
+		get('/equipment_order/order_no/' + encodeURIComponent(orderNo.value), (res) => {
+			if (res.getNumber('code', 0) !== 200) {
+				showLoadError(res.getString('message') ?? '器材订单加载失败')
+				return
+			}
+			const data = res.getJSON('data')
+			if (data == null) {
+				showLoadError('器材订单加载失败')
+				return
+			}
+			orderTypeText.value = '康复器材订单'
+			productName.value = equipmentProductName(data)
+			orderNo.value = data.getString('order_no') ?? orderNo.value
+			tradeNo.value = data.getString('payment_no') ?? orderNo.value
+			paymentType.value = paymentTypeText(data.getNumber('payment_type', 0))
+			orderTime.value = formatOrderTime(data.getString('order_time') ?? '')
+			paymentTime.value = formatOrderTime(data.getString('payment_time') ?? '')
+			statusText.value = orderStatusText(data.getNumber('status', 0))
+			const totalValue = data.getString('payment_num') ?? data.getNumber('order_total', 0).toString()
+			amountText.value = formatMoney(Math.abs(Number(totalValue)).toString(), 2)
+			shippingName.value = data.getString('shipping_name') ?? ''
+			shippingPhone.value = data.getString('shipping_phone') ?? ''
+			shippingAddress.value = data.getString('shipping_address') ?? ''
+		}, () => {
+			showLoadError('器材订单加载失败')
+		})
+	}
+
+	function orderStatusText (status: number): string {
+		if (status === 0) {
+			return '已关闭'
+		}
+		if (status === 1) {
+			return '待支付'
+		}
+		if (status === 3) {
+			return '待收货'
+		}
+		if (status === 4) {
+			return '已收货'
+		}
+		if (status === 5) {
+			return '退货中'
+		}
+		if (status === 6) {
+			return '已退货'
+		}
+		return '已完成'
+	}
+
+	function showLoadError (message: string): void {
+		uni.showToast({
+			title: message.length > 30 ? '关联订单加载失败' : message,
+			icon: 'none'
+		})
+	}
+
+	function copyText (value: string): void {
+		if (value.length > 0) {
+			uni.setClipboardData({ data: value })
+		}
+	}
+
+	function viewMyPlans (): void {
+		uni.navigateTo({
+			url: '/pages/my-plans/my-plans'
+		})
+	}
+
+	function goBack (): void {
+		uni.navigateBack()
+	}
+</script>
+
+<style lang="scss">
+	.page {
+		display: flex;
+		flex-direction: column;
+		height: 100vh;
+		background: #F7F8FA;
+	}
+
+	.hero {
+		background-image: linear-gradient(135deg, #FF8A3D 0%, #FF5226 100%);
+	}
+
+	.safe-nav {
+		width: 100%;
+	}
+
+	.nav-row {
+		height: 32px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 20px;
+		padding-right: 20px;
+		box-sizing: border-box;
+	}
+
+	.back-button {
+		width: 32px;
+		height: 32px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 16px;
+		background: rgba(255, 255, 255, 0.18);
+	}
+
+	.back-glyph {
+		margin-top: -3px;
+		font-size: 28px;
+		line-height: 28px;
+		color: #FFFFFF;
+	}
+
+	.nav-title {
+		flex: 1;
+		text-align: center;
+		font-size: 16px;
+		font-weight: 600;
+		color: #FFFFFF;
+	}
+
+	.nav-placeholder {
+		width: 32px;
+		height: 32px;
+	}
+
+	.amount-area {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 8px;
+		padding: 14px 20px 28px;
+	}
+
+	.amount-label {
+		font-size: 12px;
+		color: rgba(255, 255, 255, 0.8);
+	}
+
+	.amount-value {
+		font-size: 34px;
+		font-weight: 700;
+		line-height: 41px;
+		color: #FFFFFF;
+	}
+
+	.status-pill {
+		padding: 4px 10px;
+		background: rgba(255, 255, 255, 0.18);
+		border-radius: 999px;
+	}
+
+	.status-text {
+		font-size: 11px;
+		font-weight: 500;
+		color: #FFFFFF;
+	}
+
+	.content-scroll {
+		flex: 1;
+		height: 0;
+	}
+
+	.content-inner {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		padding: 20px 16px 48px;
+	}
+
+	.section-title {
+		font-size: 16px;
+		font-weight: 700;
+		color: #1A1D24;
+	}
+
+	.info-card {
+		padding: 4px 16px;
+		box-sizing: border-box;
+		background: #FFFFFF;
+		border: 1px solid #EEF0F3;
+		border-radius: 16px;
+		box-shadow: 0 4px 16px rgba(23, 26, 36, 0.04);
+	}
+
+	.shipping-card {
+		margin-top: 0;
+	}
+
+	.info-row {
+		min-height: 43px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		padding: 12px 0;
+		box-sizing: border-box;
+	}
+
+	.info-row-stack {
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 7px;
+	}
+
+	.info-label {
+		font-size: 13px;
+		color: #9CA3AF;
+		flex-shrink: 0;
+	}
+
+	.info-value {
+		font-size: 13px;
+		font-weight: 500;
+		color: #1A1D24;
+	}
+
+	.info-product {
+		max-width: 205px;
+		text-align: right;
+	}
+
+	.divider {
+		width: 100%;
+		height: 1px;
+		background: #F1F3F5;
+	}
+
+	.number-line {
+		width: 100%;
+		display: flex;
+		flex-direction: row;
+		align-items: flex-start;
+		justify-content: flex-end;
+		gap: 8px;
+	}
+
+	.number-value {
+		flex: 0 1 auto;
+		min-width: 0;
+		max-width: calc(100% - 42px);
+		font-family: Inter;
+		font-size: 12px;
+		line-height: 18px;
+		text-align: right;
+		word-break: break-all;
+	}
+
+	.copy-text {
+		flex-shrink: 0;
+		padding-top: 1px;
+		font-size: 12px;
+		font-weight: 500;
+		color: #FF6B35;
+	}
+
+	.address-row {
+		align-items: flex-start;
+	}
+
+	.address-value {
+		max-width: 230px;
+		text-align: right;
+		line-height: 20px;
+	}
+
+	.action-button {
+		height: 48px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: #FF6B35;
+		border-radius: 12px;
+	}
+
+	.action-text {
+		font-size: 15px;
+		font-weight: 600;
+		color: #FFFFFF;
+	}
+</style>

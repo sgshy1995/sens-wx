@@ -76,8 +76,9 @@
 						<text class="group-summary">{{ group.summaryText }}</text>
 					</view>
 					<view v-for="(order, index) in group.orders" :key="order.id" class="order-row" @click="openOrder(order)">
-						<view class="order-icon" :class="order.isIncome ? 'order-icon-income' : 'order-icon-expense'">
-							<text class="order-icon-text" :class="order.isIncome ? 'order-icon-text-income' : 'order-icon-text-expense'">{{ order.isIncome ? '+' : '-' }}</text>
+						<view class="order-icon" :class="order.iconPath === '/static/icons/ic-balance-recharge.svg' ? 'order-icon-recharge' : (order.iconPath.length > 0 ? 'order-icon-custom' : (order.isIncome ? 'order-icon-income' : 'order-icon-expense'))">
+							<image v-if="order.iconPath.length > 0" class="order-icon-image" :src="order.iconPath" mode="aspectFit"></image>
+							<text v-else class="order-icon-text" :class="order.isIncome ? 'order-icon-text-income' : 'order-icon-text-expense'">{{ order.isIncome ? '+' : '-' }}</text>
 						</view>
 						<view class="order-info">
 							<text class="order-title">{{ order.title }}</text>
@@ -133,30 +134,52 @@
 	function loadOrders (): void {
 		loading.value = true
 		get('/top_up_order?order_type=payment_time&order=desc', (res) => {
-			const code = res.getNumber('code', 0)
-			if (code !== 200) {
-				loading.value = false
-				return
-			}
-			const items = res.getArray<UTSJSONObject>('data')
-			const parsed: BalanceOrder[] = []
-			const minTime = dayjs().subtract(29, 'day').startOf('day').valueOf()
-			if (items != null) {
-				for (let i = 0; i < items.length; i++) {
-					const item = new BalanceOrder()
-					item.initFromJSON(items[i])
-					if (item.dateKey.length === 0 || dayjs(item.dateKey).valueOf() >= minTime) {
-						parsed.push(item)
-					}
+			loadWechatOrders(parseBalanceOrders(res))
+		}, () => {
+			loadWechatOrders([])
+		})
+	}
+
+	function parseBalanceOrders (res: UTSJSONObject): BalanceOrder[] {
+		const parsed: BalanceOrder[] = []
+		if (res.getNumber('code', 0) !== 200) {
+			return parsed
+		}
+		const items = res.getArray<UTSJSONObject>('data')
+		const minTime = dayjs().subtract(29, 'day').startOf('day').valueOf()
+		if (items != null) {
+			for (let i = 0; i < items.length; i++) {
+				const item = new BalanceOrder()
+				item.initFromJSON(items[i])
+				if (item.dateKey.length === 0 || dayjs(item.dateKey).valueOf() >= minTime) {
+					parsed.push(item)
 				}
 			}
-			orders.value = parsed
-			updateMonthlySummary()
-			rebuildGroups()
-			loading.value = false
+		}
+		return parsed
+	}
+
+	function loadWechatOrders (balanceOrders: BalanceOrder[]): void {
+		get('/payments/orders/history', (res) => {
+			const merged = balanceOrders
+			const wechatOrders = parseBalanceOrders(res)
+			for (let i = 0; i < wechatOrders.length; i++) {
+				merged.push(wechatOrders[i])
+			}
+			applyOrders(merged)
 		}, () => {
-			loading.value = false
+			applyOrders(balanceOrders)
 		})
+	}
+
+	function applyOrders (merged: BalanceOrder[]): void {
+		merged.sort((left, right) => {
+			return dayjs(right.dateKey).valueOf() - dayjs(left.dateKey).valueOf()
+		})
+		orders.value = merged
+		updateMonthlySummary()
+		rebuildGroups()
+		loading.value = false
 	}
 
 	function updateMonthlySummary (): void {
@@ -205,7 +228,9 @@
 	function openOrder (order: BalanceOrder): void {
 		const base = order.isIncome ? '/pages/recharge-order-detail/recharge-order-detail' : '/pages/consume-order-detail/consume-order-detail'
 		uni.navigateTo({
-			url: base + '?id=' + encodeURIComponent(order.id) + '&orderNo=' + encodeURIComponent(order.orderNo)
+			url: base + '?id=' + encodeURIComponent(order.id)
+				+ '&orderNo=' + encodeURIComponent(order.orderNo)
+				+ '&source=' + encodeURIComponent(order.source)
 		})
 	}
 
@@ -494,6 +519,19 @@
 
 	.order-icon-expense {
 		background: #EEF0F3;
+	}
+
+	.order-icon-custom {
+		background: #F5F5F5;
+	}
+
+	.order-icon-recharge {
+		background: #FFF3EC;
+	}
+
+	.order-icon-image {
+		width: 20px;
+		height: 20px;
 	}
 
 	.order-icon-text {

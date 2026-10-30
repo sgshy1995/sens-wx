@@ -181,6 +181,15 @@
 				"navigationStyle": "custom",
 				"backgroundColor": "#F7F8FA"
 			}
+		},
+		{
+			"path": "pages/related-order/related-order",
+			"style": {
+				"navigationBarTitleText": "关联订单",
+				"navigationBarTextStyle": "white",
+				"navigationStyle": "custom",
+				"backgroundColor": "#F7F8FA"
+			}
 		}
 	],
 	"globalStyle": {

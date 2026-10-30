@@ -12,13 +12,17 @@ export class BalanceOrder {
 	title: string = ''
 	subtitle: string = ''
 	amountText: string = ''
+	source: string = 'balance'
+	iconPath: string = ''
 
 	initFromJSON (json: UTSJSONObject): void {
 		this.id = json.getString('id') ?? ''
 		this.orderNo = json.getString('order_no') ?? ''
+		this.source = json.getString('source') ?? 'balance'
 		this.amount = Number(json.getString('payment_num') ?? '0')
 		this.isIncome = this.amount >= 0
 		this.title = resolveTitle(json, this.isIncome)
+		this.iconPath = resolveIcon(json, this.isIncome)
 
 		let rawTime = json.getString('payment_time') ?? ''
 		if (rawTime.length === 0) {
@@ -55,19 +59,37 @@ export class BalanceGroup {
 function resolveTitle (json: UTSJSONObject, isIncome: boolean): string {
 	const reason = json.getString('created_reason') ?? ''
 	if (!isIncome) {
+		if (reason.indexOf('解锁康复课程') >= 0 || reason.indexOf('微信支付') >= 0 || reason.indexOf('组合课程购买') >= 0) {
+			return '方案购买支付'
+		}
 		return reason.length > 0 ? reason : '余额消费'
 	}
 	const paymentType = json.getNumber('payment_type', 1)
+	if (paymentType === 1) {
+		return '余额充值'
+	}
 	if (paymentType === 2) {
 		return '支付宝充值'
 	}
 	if (paymentType === 3) {
 		return 'Apple充值'
 	}
-	if (paymentType === 1) {
-		return '微信充值'
-	}
 	return '余额充值'
+}
+
+function resolveIcon (json: UTSJSONObject, isIncome: boolean): string {
+	const reason = json.getString('created_reason') ?? ''
+	const source = json.getString('source') ?? 'balance'
+	if (isIncome) {
+		return '/static/icons/ic-balance-recharge.svg'
+	}
+	if (reason.indexOf('解锁康复课程') >= 0) {
+		return '/static/icons/ic-balance-purchase.svg'
+	}
+	if (source === 'wechat' || reason.indexOf('微信支付') >= 0 || reason.indexOf('组合课程购买') >= 0) {
+		return '/static/icons/ic-wechat-purchase.svg'
+	}
+	return ''
 }
 
 export function buildBalanceGroups (
