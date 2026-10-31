@@ -44,7 +44,7 @@
 					</view>
 					<view class="welcome-bubble">
 						<text class="welcome-text">
-							您好，我是您的在线康复师。使用程序、日常训练或课程订单遇到问题时，都可以在这里告诉我。
+							{{ welcomeText }}
 						</text>
 					</view>
 				</view>
@@ -62,9 +62,9 @@
 						<view
 							class="message-bubble"
 							:class="{
-								'user-bubble': item.senderRole === 'user' && item.messageType !== 'course',
+								'user-bubble': item.senderRole === 'user' && item.messageType !== 'course' && item.messageType !== 'recharge' && item.messageType !== 'consume',
 								'coach-bubble': item.senderRole !== 'user',
-								'course-bubble': item.messageType === 'course'
+								'course-bubble': item.messageType === 'course' || item.messageType === 'recharge' || item.messageType === 'consume'
 							}"
 						>
 							<text
@@ -105,6 +105,26 @@
 								</view>
 								<view class="course-action" @click="openCourse(item)">
 									<text class="course-action-text">查看完整方案</text>
+								</view>
+							</view>
+
+							<view
+								v-else-if="(item.messageType === 'recharge' || item.messageType === 'consume') && item.order != null"
+								class="service-order-message"
+							>
+								<view class="course-kicker-row">
+									<text class="course-kicker">{{ serviceOrderKindText(item) }}</text>
+									<text class="course-paid">{{ item.order.statusText }}</text>
+								</view>
+								<text class="course-title">{{ item.order.title }}</text>
+								<text class="course-stage">{{ serviceOrderTime(item) }}</text>
+								<view class="course-divider"></view>
+								<view class="course-price-block">
+									<text class="service-order-amount">{{ item.order.amountText }}</text>
+									<text class="course-order-no">订单 {{ item.order.orderNo }}</text>
+								</view>
+								<view class="course-action" @click="openServiceOrder(item)">
+									<text class="course-action-text">查看订单详情</text>
 								</view>
 							</view>
 
@@ -149,7 +169,7 @@
 				</view>
 				<view class="order-button" @click="openOrderSheet">
 					<image class="order-icon" src="/static/icons/ic-order.svg" mode="aspectFit"></image>
-					<text class="order-button-text">订单</text>
+					<text class="order-button-text">{{ orderButtonText }}</text>
 				</view>
 			</view>
 		</view>
@@ -184,39 +204,89 @@
 			<view class="order-sheet" @click.stop>
 				<view class="sheet-header">
 					<view class="sheet-title-wrap">
-						<text class="sheet-title">选择要咨询的订单</text>
-						<text class="sheet-subtitle">仅展示已解锁的组合课程</text>
+						<text class="sheet-title">{{ orderSheetTitle }}</text>
+						<text class="sheet-subtitle">{{ orderSheetSubtitle }}</text>
 					</view>
 					<view class="sheet-close" @click="closeOrderSheet">
 						<text class="sheet-close-text">×</text>
 					</view>
 				</view>
-				<scroll-view class="order-list" scroll-y>
-					<view v-if="loadingCourses" class="sheet-state">
-						<text class="sheet-state-text">正在加载课程订单...</text>
-					</view>
-					<view v-else-if="orderCourses.length === 0" class="sheet-state">
-						<text class="empty-order-title">暂无可咨询的课程订单</text>
-						<text class="empty-order-subtitle">解锁组合课程后，可在这里发送订单卡片</text>
-					</view>
-					<template v-else>
-						<view
-							v-for="course in orderCourses"
-							:key="course.courseId + '-' + course.stageId"
-							class="order-option"
-							:class="{ 'order-option-highlight': course.stageId === highlightStageId }"
-							@click="sendCourseMessage(course)"
-						>
-							<view class="order-option-head">
-								<text class="order-option-title">{{ course.courseTitle }}</text>
-								<text class="order-option-price">¥{{ course.price }}</text>
+				<scroll-view class="order-list" scroll-y @scrolltolower="loadMoreServiceOrders">
+					<template v-if="serviceMode">
+						<view class="service-order-tabs">
+							<view
+								class="service-order-tab"
+								:class="{ 'service-order-tab-active': serviceOrderTab === 'recharge' }"
+								@click="selectServiceOrderTab('recharge')"
+							>
+								<text class="service-order-tab-text" :class="{ 'service-order-tab-text-active': serviceOrderTab === 'recharge' }">充值订单</text>
 							</view>
-							<text class="order-option-stage">{{ course.stageTitle }}</text>
-							<view class="order-option-foot">
-								<text class="order-option-no">订单 {{ course.orderNo }}</text>
-								<text class="order-option-time">{{ course.unlockedText }}</text>
+							<view
+								class="service-order-tab"
+								:class="{ 'service-order-tab-active': serviceOrderTab === 'consume' }"
+								@click="selectServiceOrderTab('consume')"
+							>
+								<text class="service-order-tab-text" :class="{ 'service-order-tab-text-active': serviceOrderTab === 'consume' }">消费订单</text>
 							</view>
 						</view>
+						<view v-if="loadingServiceOrders && serviceOrders.length === 0" class="sheet-state">
+							<text class="sheet-state-text">正在加载订单...</text>
+						</view>
+						<view v-else-if="serviceOrders.length === 0" class="sheet-state">
+							<text class="empty-order-title">暂无可咨询的{{ serviceOrderTab === 'recharge' ? '充值记录' : '消费订单' }}</text>
+							<text class="empty-order-subtitle">订单产生后可在这里发送给客服</text>
+						</view>
+						<template v-else>
+							<view
+								v-for="order in serviceOrders"
+								:key="order.recordSource + '-' + order.id + '-' + order.orderNo"
+								class="order-option service-order-option"
+								@click="sendServiceOrderMessage(order)"
+							>
+								<view class="order-option-head">
+									<view class="service-order-title-wrap">
+										<text class="service-order-kind">{{ serviceOrderTab === 'recharge' ? '充值' : '消费' }}</text>
+										<text class="order-option-title">{{ order.title }}</text>
+									</view>
+									<text class="service-order-option-amount" :class="{ 'service-order-option-income': serviceOrderTab === 'recharge' }">{{ order.amountText }}</text>
+								</view>
+								<view class="order-option-foot">
+									<text class="order-option-no">订单 {{ order.orderNo }}</text>
+									<text class="order-option-time">{{ order.occurredText }}</text>
+								</view>
+							</view>
+							<view class="service-order-load-state">
+								<text class="service-order-load-text">{{ serviceOrderLoadText }}</text>
+							</view>
+						</template>
+					</template>
+					<template v-else>
+						<view v-if="loadingCourses" class="sheet-state">
+							<text class="sheet-state-text">正在加载课程订单...</text>
+						</view>
+						<view v-else-if="orderCourses.length === 0" class="sheet-state">
+							<text class="empty-order-title">暂无可咨询的课程订单</text>
+							<text class="empty-order-subtitle">解锁组合方案后，可在这里发送订单卡片</text>
+						</view>
+						<template v-else>
+							<view
+								v-for="course in orderCourses"
+								:key="course.courseId + '-' + course.stageId"
+								class="order-option"
+								:class="{ 'order-option-highlight': course.stageId === highlightStageId }"
+								@click="sendCourseMessage(course)"
+							>
+								<view class="order-option-head">
+									<text class="order-option-title">{{ course.courseTitle }}</text>
+									<text class="order-option-price">¥{{ course.price }}</text>
+								</view>
+								<text class="order-option-stage">{{ course.stageTitle }}</text>
+								<view class="order-option-foot">
+									<text class="order-option-no">订单 {{ course.orderNo }}</text>
+									<text class="order-option-time">{{ course.unlockedText }}</text>
+								</view>
+							</view>
+						</template>
 					</template>
 				</scroll-view>
 			</view>
@@ -227,9 +297,11 @@
 <script setup lang="uts">
 	import { hasLocalToken } from '../../common/auth'
 	import {
+		formatSupportChatTime,
 		shouldShowSupportChatTime,
 		SupportChatCourseOption,
-		SupportChatMessage
+		SupportChatMessage,
+		SupportChatServiceOrderOption
 	} from '../../common/support-chat'
 	import { resolveFileUrl } from '../../common/forum'
 	import { get, post } from '../../common/request'
@@ -240,10 +312,17 @@
 	const MAX_VIDEO_SIZE: number = 30 * 1024 * 1024
 
 	const statusBarHeight = ref(24)
+	const serviceMode = ref(false)
 	const adminName = ref('易赴康-康复师')
 	const adminAvatar = ref('/static/icons/ic-help-avatar.png')
+	const welcomeText = ref('您好，我是您的在线康复师。使用程序、日常训练或课程订单遇到问题时，都可以在这里告诉我。')
+	const orderButtonText = ref('订单')
+	const orderSheetTitle = ref('选择要咨询的康复方案')
+	const orderSheetSubtitle = ref('仅展示已解锁的康复方案')
 	const messages = ref<SupportChatMessage[]>([])
 	const orderCourses = ref<SupportChatCourseOption[]>([])
+	const serviceOrders = ref<SupportChatServiceOrderOption[]>([])
+	const serviceOrderTab = ref('recharge')
 	const draft = ref('')
 	const initialLoading = ref(true)
 	const loadingOlder = ref(false)
@@ -251,6 +330,10 @@
 	const uploading = ref(false)
 	const uploadingLabel = ref('正在上传...')
 	const loadingCourses = ref(false)
+	const loadingServiceOrders = ref(false)
+	const serviceOrderPageNo = ref(1)
+	const serviceOrderHasMore = ref(false)
+	const serviceOrderLoadText = ref('')
 	const hasMore = ref(false)
 	const nextBefore = ref('')
 	const scrollIntoView = ref('')
@@ -271,6 +354,27 @@
 	onLoad((options) => {
 		const sys = uni.getSystemInfoSync()
 		statusBarHeight.value = sys.statusBarHeight
+		const channel = options['channel']
+		let channelText = ''
+		if (channel != null) {
+			channelText = channel as string
+		}
+		if (channelText === 'service') {
+			serviceMode.value = true
+			adminName.value = '在线客服'
+			adminAvatar.value = '/static/icons/ic-online-avatar.png'
+			welcomeText.value = '您好，我是在线客服。充值、消费或订单遇到问题时，都可以在这里告诉我。'
+			orderButtonText.value = '信息'
+			orderSheetTitle.value = '选择想要咨询的信息'
+			orderSheetSubtitle.value = '您可以咨询充值、消费相关信息'
+		} else {
+			adminName.value = '易赴康-康复师'
+			adminAvatar.value = '/static/icons/ic-help-avatar.png'
+			welcomeText.value = '您好，我是您的在线康复师。使用程序、日常训练或课程订单遇到问题时，都可以在这里告诉我。'
+			orderButtonText.value = '订单'
+			orderSheetTitle.value = '选择要咨询的康复方案'
+			orderSheetSubtitle.value = '仅展示已解锁的康复方案'
+		}
 		if (options['stageId'] != null) {
 			highlightStageId.value = options['stageId'] as string
 		}
@@ -313,7 +417,7 @@
 			initialLoading.value = false
 			uni.showModal({
 				title: '请先登录',
-				content: '登录后才能联系康复师',
+				content: serviceMode.value ? '登录后才能联系在线客服' : '登录后才能联系康复师',
 				showCancel: false,
 				success: () => {
 					uni.navigateTo({ url: '/pages/login-guide/login-guide' })
@@ -323,7 +427,7 @@
 		}
 		initialRequesting = true
 		initialLoading.value = true
-		get('/support_chat/overview', (overviewRes) => {
+		get(chatApiBase() + '/overview', (overviewRes) => {
 			loadLatestMessages()
 		}, (message) => {
 			initialRequesting = false
@@ -333,7 +437,7 @@
 	}
 
 	function loadLatestMessages (): void {
-		get('/support_chat/messages?pageSize=20', (res) => {
+		get(chatApiBase() + '/messages?pageSize=20', (res) => {
 			initialRequesting = false
 			initialLoading.value = false
 			if (res.getNumber('code', 0) !== 200) {
@@ -376,7 +480,7 @@
 			return
 		}
 		loadingOlder.value = true
-		const url = '/support_chat/messages?before=' + encodeURIComponent(nextBefore.value) + '&pageSize=20'
+		const url = chatApiBase() + '/messages?before=' + encodeURIComponent(nextBefore.value) + '&pageSize=20'
 		get(url, (res) => {
 			loadingOlder.value = false
 			if (res.getNumber('code', 0) !== 200) {
@@ -434,7 +538,7 @@
 			return
 		}
 		polling = true
-		const url = '/support_chat/messages?after=' + encodeURIComponent(latest) + '&pageSize=50'
+		const url = chatApiBase() + '/messages?after=' + encodeURIComponent(latest) + '&pageSize=50'
 		get(url, (res) => {
 			polling = false
 			if (res.getNumber('code', 0) === 200) {
@@ -504,7 +608,7 @@
 		const body = new UTSJSONObject()
 		body.set('message_type', 'text')
 		body.set('content', content)
-		post('/support_chat/messages', body, (res) => {
+		post(chatApiBase() + '/messages', body, (res) => {
 			sending.value = false
 			handleSendResult(res, temp.id, '消息发送失败')
 		}, (message) => {
@@ -564,7 +668,7 @@
 		uploadingLabel.value = mediaType === 'video' ? '正在压缩并上传视频...' : '正在压缩并上传图片...'
 		uni.showLoading({ title: mediaType === 'video' ? '上传视频' : '上传图片', mask: true })
 		wx.uploadFile({
-			url: API_BASE_URL + '/support_chat/upload',
+			url: API_BASE_URL + chatApiBase() + '/upload',
 			filePath: filePath,
 			name: 'file',
 			header: buildUploadHeader(),
@@ -616,7 +720,7 @@
 		body.set('message_type', mediaType)
 		body.set('media_url', url)
 		body.set('media_size', size)
-		post('/support_chat/messages', body, (res) => {
+		post(chatApiBase() + '/messages', body, (res) => {
 			finishUpload()
 			handleSendResult(res, temp.id, mediaType === 'video' ? '视频发送失败' : '图片发送失败')
 		}, (message) => {
@@ -680,7 +784,11 @@
 	function openOrderSheet (): void {
 		closeActions()
 		orderSheetVisible.value = true
-		loadCourseOptions()
+		if (serviceMode.value) {
+			loadServiceOrders(true)
+		} else {
+			loadCourseOptions()
+		}
 	}
 
 	function closeOrderSheet (): void {
@@ -715,6 +823,131 @@
 		})
 	}
 
+	function selectServiceOrderTab (kind: string): void {
+		if (loadingServiceOrders.value) {
+			return
+		}
+		if (serviceOrderTab.value === kind && serviceOrders.value.length > 0) {
+			return
+		}
+		serviceOrderTab.value = kind
+		loadServiceOrders(true)
+	}
+
+	function loadServiceOrders (reset: boolean): void {
+		if (loadingServiceOrders.value) {
+			return
+		}
+		if (!reset && !serviceOrderHasMore.value) {
+			return
+		}
+		const targetPage = reset ? 1 : serviceOrderPageNo.value + 1
+		loadingServiceOrders.value = true
+		serviceOrderLoadText.value = reset ? '正在加载...' : '正在加载更多...'
+		const url = chatApiBase() + '/orders?kind=' + encodeURIComponent(serviceOrderTab.value)
+			+ '&pageNo=' + targetPage.toString() + '&pageSize=10'
+		get(url, (res) => {
+			loadingServiceOrders.value = false
+			if (res.getNumber('code', 0) !== 200) {
+				serviceOrderLoadText.value = '加载失败，请稍后重试'
+				showError(res.getString('message') ?? '订单加载失败')
+				return
+			}
+			const data = res.getJSON('data')
+			const list = data == null ? null : data.getArray<UTSJSONObject>('orders')
+			const parsed: SupportChatServiceOrderOption[] = []
+			if (list != null) {
+				for (let i = 0; i < list.length; i++) {
+					const item = new SupportChatServiceOrderOption()
+					item.initFromJSON(list[i])
+					parsed.push(item)
+				}
+			}
+			if (reset) {
+				serviceOrders.value = parsed
+			} else {
+				const merged: SupportChatServiceOrderOption[] = []
+				for (let i = 0; i < serviceOrders.value.length; i++) {
+					merged.push(serviceOrders.value[i])
+				}
+				for (let i = 0; i < parsed.length; i++) {
+					merged.push(parsed[i])
+				}
+				serviceOrders.value = merged
+			}
+			serviceOrderPageNo.value = targetPage
+			serviceOrderHasMore.value = data == null ? false : (data.getBoolean('has_more') ?? false)
+			serviceOrderLoadText.value = serviceOrderHasMore.value ? '上拉加载更多' : '没有更多订单了'
+		}, (message) => {
+			loadingServiceOrders.value = false
+			serviceOrderLoadText.value = '加载失败，请稍后重试'
+			showError(message)
+		})
+	}
+
+	function loadMoreServiceOrders (): void {
+		if (!serviceMode.value || loadingServiceOrders.value || !serviceOrderHasMore.value) {
+			return
+		}
+		loadServiceOrders(false)
+	}
+
+	function sendServiceOrderMessage (order: SupportChatServiceOrderOption): void {
+		if (sending.value) {
+			return
+		}
+		const messageType = serviceOrderTab.value
+		const temp = createTempMessage(messageType, '')
+		temp.order = order.toCard()
+		messages.value.push(temp)
+		orderSheetVisible.value = false
+		sending.value = true
+		scheduleScrollToBottom()
+		const body = new UTSJSONObject()
+		body.set('message_type', messageType)
+		body.set('record_source', order.recordSource)
+		body.set('order_id', order.id)
+		body.set('order_no', order.orderNo)
+		post(chatApiBase() + '/messages', body, (res) => {
+			sending.value = false
+			handleSendResult(res, temp.id, '订单发送失败')
+		}, (message) => {
+			sending.value = false
+			markMessageFailed(temp.id)
+			showError(message)
+		})
+	}
+
+	function serviceOrderKindText (message: SupportChatMessage): string {
+		return message.messageType === 'recharge' ? '充值订单' : '消费订单'
+	}
+
+	function serviceOrderTime (message: SupportChatMessage): string {
+		if (message.order == null) {
+			return ''
+		}
+		return formatSupportChatTime(message.order.occurredAt)
+	}
+
+	function openServiceOrder (message: SupportChatMessage): void {
+		const order = message.order
+		if (order == null) {
+			return
+		}
+		if (order.kind === 'recharge') {
+			uni.navigateTo({
+				url: '/pages/recharge-order-detail/recharge-order-detail?id=' + encodeURIComponent(order.id)
+					+ '&orderNo=' + encodeURIComponent(order.orderNo)
+			})
+			return
+		}
+		uni.navigateTo({
+			url: '/pages/consume-order-detail/consume-order-detail?id=' + encodeURIComponent(order.id)
+				+ '&orderNo=' + encodeURIComponent(order.orderNo)
+				+ '&source=' + encodeURIComponent(order.recordSource)
+		})
+	}
+
 	function sendCourseMessage (course: SupportChatCourseOption): void {
 		if (sending.value) {
 			return
@@ -729,7 +962,7 @@
 		body.set('message_type', 'course')
 		body.set('course_id', course.courseId)
 		body.set('stage_id', course.stageId)
-		post('/support_chat/messages', body, (res) => {
+		post(chatApiBase() + '/messages', body, (res) => {
 			sending.value = false
 			handleSendResult(res, temp.id, '课程订单发送失败')
 		}, (message) => {
@@ -763,6 +996,10 @@
 			url: '/pages/rehab-plan/rehab-plan?stageId=' + encodeURIComponent(message.course.stageId)
 				+ '&courseTitle=' + encodeURIComponent(message.course.courseTitle)
 		})
+	}
+
+	function chatApiBase (): string {
+		return serviceMode.value ? '/online_service_chat' : '/support_chat'
 	}
 
 	function previewImage (message: SupportChatMessage): void {
@@ -1063,7 +1300,8 @@
 		background: #15191D;
 	}
 
-	.course-message {
+	.course-message,
+	.service-order-message {
 		display: flex;
 		width: 276px;
 		max-width: 70vw;
@@ -1124,6 +1362,12 @@
 	}
 
 	.course-price {
+		font-size: 19px;
+		font-weight: 700;
+		color: #F05A2A;
+	}
+
+	.service-order-amount {
 		font-size: 19px;
 		font-weight: 700;
 		color: #F05A2A;
@@ -1432,6 +1676,41 @@
 		max-height: 48vh;
 	}
 
+	.service-order-tabs {
+		display: flex;
+		flex-direction: row;
+		gap: 8px;
+		margin-bottom: 12px;
+		padding: 4px;
+		border-radius: 10px;
+		background: #F5F6F8;
+	}
+
+	.service-order-tab {
+		display: flex;
+		height: 38px;
+		flex: 1;
+		align-items: center;
+		justify-content: center;
+		border-radius: 8px;
+	}
+
+	.service-order-tab-active {
+		background: #FFFFFF;
+		box-shadow: 0 2px 8px rgba(31, 36, 43, 0.06);
+	}
+
+	.service-order-tab-text {
+		font-size: 13px;
+		font-weight: 500;
+		color: #868C95;
+	}
+
+	.service-order-tab-text-active {
+		font-weight: 600;
+		color: #F05A2A;
+	}
+
 	.sheet-state {
 		display: flex;
 		height: 150px;
@@ -1491,6 +1770,51 @@
 		font-size: 15px;
 		font-weight: 700;
 		color: #F05A2A;
+	}
+
+	.service-order-option {
+		padding: 14px;
+	}
+
+	.service-order-title-wrap {
+		display: flex;
+		min-width: 0;
+		flex: 1;
+		flex-direction: row;
+		align-items: center;
+		gap: 7px;
+	}
+
+	.service-order-kind {
+		flex-shrink: 0;
+		padding: 2px 6px;
+		border-radius: 4px;
+		font-size: 9px;
+		color: #F05A2A;
+		background: #FFF0E8;
+	}
+
+	.service-order-option-amount {
+		flex-shrink: 0;
+		font-size: 15px;
+		font-weight: 700;
+		color: #30353D;
+	}
+
+	.service-order-option-income {
+		color: #E95720;
+	}
+
+	.service-order-load-state {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 8px 0 12px;
+	}
+
+	.service-order-load-text {
+		font-size: 10px;
+		color: #A0A5AD;
 	}
 
 	.order-option-stage {

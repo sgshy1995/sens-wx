@@ -53,6 +53,7 @@ export class SupportChatMessage {
 	mediaSize: number = 0
 	mediaDuration: number = 0
 	course: SupportChatCourseCard | null = null
+	order: SupportChatServiceOrderCard | null = null
 	createdAt: string = ''
 	timeText: string = ''
 	pending: boolean = false
@@ -105,11 +106,121 @@ export class SupportChatMessage {
 			card.initFromJSON(courseJson)
 			this.course = card
 		}
+		const orderJson = json.getJSON('order')
+		if (orderJson != null) {
+			const card = new SupportChatServiceOrderCard()
+			card.initFromJSON(orderJson)
+			this.order = card
+		}
 		const createdAt = json.getString('created_at')
 		if (createdAt != null) {
 			this.createdAt = createdAt
 			this.timeText = formatSupportChatTime(createdAt)
 		}
+	}
+}
+
+export class SupportChatServiceOrderCard {
+	kind: string = ''
+	recordSource: string = ''
+	id: string = ''
+	orderNo: string = ''
+	paymentNo: string = ''
+	amount: string = '0.00'
+	amountText: string = '¥0.00'
+	title: string = ''
+	subtitle: string = ''
+	paymentType: number = 0
+	paymentTypeText: string = ''
+	status: string = ''
+	statusText: string = ''
+	occurredAt: string = ''
+	createdReason: string = ''
+	courseId: string = ''
+	stageId: string = ''
+
+	initFromJSON (json: UTSJSONObject): void {
+		this.kind = json.getString('kind') ?? ''
+		this.recordSource = json.getString('record_source') ?? ''
+		this.id = json.getString('id') ?? ''
+		this.orderNo = json.getString('order_no') ?? ''
+		this.paymentNo = json.getString('payment_no') ?? ''
+		this.amount = json.getString('amount') ?? '0.00'
+		this.amountText = json.getString('amount_text') ?? '¥0.00'
+		this.title = json.getString('title') ?? ''
+		this.subtitle = json.getString('subtitle') ?? ''
+		this.paymentType = json.getNumber('payment_type', 0)
+		this.paymentTypeText = json.getString('payment_type_text') ?? ''
+		const statusText = json.getString('status')
+		const statusNumber = json.getNumber('status', -1)
+		this.status = statusText ?? (statusNumber >= 0 ? statusNumber.toString() : '')
+		this.statusText = json.getString('status_text') ?? ''
+		this.occurredAt = json.getString('occurred_at') ?? ''
+		this.createdReason = json.getString('created_reason') ?? ''
+		this.courseId = json.getString('course_id') ?? ''
+		this.stageId = json.getString('stage_id') ?? ''
+	}
+}
+
+export class SupportChatServiceOrderOption {
+	kind: string = ''
+	recordSource: string = ''
+	id: string = ''
+	orderNo: string = ''
+	paymentNo: string = ''
+	amount: string = '0.00'
+	amountText: string = '¥0.00'
+	title: string = ''
+	subtitle: string = ''
+	paymentType: number = 0
+	paymentTypeText: string = ''
+	status: string = ''
+	statusText: string = ''
+	occurredAt: string = ''
+	occurredText: string = ''
+	createdReason: string = ''
+
+	initFromJSON (json: UTSJSONObject): void {
+		this.kind = json.getString('kind') ?? ''
+		this.recordSource = json.getString('record_source') ?? ''
+		this.id = json.getString('id') ?? ''
+		this.orderNo = json.getString('order_no') ?? ''
+		this.paymentNo = json.getString('payment_no') ?? ''
+		this.amount = json.getString('amount') ?? '0.00'
+		this.amountText = json.getString('amount_text') ?? '¥0.00'
+		this.title = json.getString('title') ?? ''
+		this.subtitle = json.getString('subtitle') ?? ''
+		this.paymentType = json.getNumber('payment_type', 0)
+		this.paymentTypeText = json.getString('payment_type_text') ?? ''
+		const statusText = json.getString('status')
+		const statusNumber = json.getNumber('status', -1)
+		this.status = statusText ?? (statusNumber >= 0 ? statusNumber.toString() : '')
+		this.statusText = json.getString('status_text') ?? ''
+		this.occurredAt = json.getString('occurred_at') ?? ''
+		this.createdReason = json.getString('created_reason') ?? ''
+		if (this.occurredAt.length > 0) {
+			this.occurredText = formatSupportChatTime(this.occurredAt)
+		}
+	}
+
+	toCard (): SupportChatServiceOrderCard {
+		const card = new SupportChatServiceOrderCard()
+		card.kind = this.kind
+		card.recordSource = this.recordSource
+		card.id = this.id
+		card.orderNo = this.orderNo
+		card.paymentNo = this.paymentNo
+		card.amount = this.amount
+		card.amountText = this.amountText
+		card.title = this.title
+		card.subtitle = this.subtitle
+		card.paymentType = this.paymentType
+		card.paymentTypeText = this.paymentTypeText
+		card.status = this.status
+		card.statusText = this.statusText
+		card.occurredAt = this.occurredAt
+		card.createdReason = this.createdReason
+		return card
 	}
 }
 

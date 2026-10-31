@@ -118,7 +118,9 @@
 	}
 
 	function contactHelper (): void {
-		uni.showToast({ title: '请通过客服微信咨询', icon: 'none' })
+		uni.navigateTo({
+			url: '/pages/support-chat/support-chat?channel=service'
+		})
 	}
 
 	function goBack (): void {

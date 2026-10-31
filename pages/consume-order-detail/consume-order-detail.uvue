@@ -60,6 +60,14 @@
 					<text class="help-text">查看关联订单</text>
 					<text class="help-arrow">›</text>
 				</view>
+
+				<view class="help-card" @click="contactHelper">
+					<view class="help-icon-wrap">
+						<image class="help-icon" src="/static/icons/ic-helper.svg" mode="aspectFit"></image>
+					</view>
+					<text class="help-text">遇到问题？联系客服</text>
+					<text class="help-arrow">›</text>
+				</view>
 			</view>
 		</scroll-view>
 	</view>
@@ -209,6 +217,12 @@
 		uni.navigateTo({
 			url: '/pages/related-order/related-order?kind=' + encodeURIComponent(relatedKind.value)
 				+ '&orderNo=' + encodeURIComponent(relatedOrderNo.value)
+		})
+	}
+
+	function contactHelper (): void {
+		uni.navigateTo({
+			url: '/pages/support-chat/support-chat?channel=service'
 		})
 	}
 
