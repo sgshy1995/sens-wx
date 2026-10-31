@@ -1,2 +1,12 @@
-export const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL
-export const CDN_BASE_URL: string = import.meta.env.VITE_CDN_BASE_URL
+function normalizeBaseUrl (value: string): string {
+	let result = (value ?? '').trim()
+	while (result.endsWith('/')) {
+		result = result.substring(0, result.length - 1)
+	}
+	return result
+}
+
+export const API_BASE_URL: string = normalizeBaseUrl(import.meta.env.VITE_API_BASE_URL ?? '')
+export const CDN_BASE_URL: string = normalizeBaseUrl(import.meta.env.VITE_CDN_BASE_URL ?? '')
+export const USE_CDN_FOR_FILE: boolean = (import.meta.env.VITE_USE_CDN ?? '').trim().toLowerCase() === 'yes'
+export const FILE_BASE_URL: string = USE_CDN_FOR_FILE ? CDN_BASE_URL : API_BASE_URL

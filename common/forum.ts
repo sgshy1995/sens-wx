@@ -1,14 +1,25 @@
 import dayjs from 'dayjs'
-import { API_BASE_URL, CDN_BASE_URL } from './config'
+import { FILE_BASE_URL } from './config'
 
 export function resolveFileUrl (path: string): string {
-	if (path.startsWith("http") || path.startsWith("/")) {
-		return path
+	if (!path) {
+		return ''
 	}
-	if (path.startsWith("cdn/")) {
-		return CDN_BASE_URL + "/" + path
+	const value = path.trim()
+	if (value.length === 0) {
+		return ''
 	}
-	return API_BASE_URL + "/" + path
+	if (value.startsWith("//") || value.indexOf(":") > 0) {
+		return value
+	}
+	let normalized = value
+	while (normalized.startsWith("/")) {
+		normalized = normalized.substring(1)
+	}
+	if (FILE_BASE_URL.length === 0) {
+		return normalized
+	}
+	return FILE_BASE_URL + "/" + normalized
 }
 
 export class ForumArticle {
