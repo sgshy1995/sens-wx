@@ -69,17 +69,17 @@
 
 		const amount = options['amount']
 		if (amount != null) {
-			amountText.value = formatMoney(amount as string, 2)
+				amountText.value = formatMoney(decodeOption(amount as string), 2)
 		}
 		const time = options['time']
 		if (time != null) {
-			paymentTime.value = formatTransactionTime(time as string)
+				paymentTime.value = formatTransactionTime(decodeOption(time as string))
 		} else {
 			paymentTime.value = formatTransactionTime('')
 		}
 		const order = options['orderNo']
 		if (order != null) {
-			orderNo.value = order as string
+				orderNo.value = decodeOption(order as string)
 		}
 	})
 
@@ -87,17 +87,25 @@
 		if (value.length === 0) {
 			return currentTimeText()
 		}
+		const date = new Date(value)
+		if (date.getTime() > 0) {
+			return formatDateParts(date)
+		}
 		if (value.length >= 16 && value.charAt(10) === 'T') {
 			return value.substring(0, 10) + ' ' + value.substring(11, 16)
 		}
 		if (value.length >= 16 && value.charAt(10) === ' ') {
 			return value.substring(0, 16)
 		}
-		const date = new Date(value)
-		if (date.getTime() > 0) {
-			return formatDateParts(date)
-		}
 		return value
+	}
+
+	function decodeOption (value: string): string {
+		try {
+			return decodeURIComponent(value)
+		} catch (error) {
+			return value
+		}
 	}
 
 	function currentTimeText (): string {

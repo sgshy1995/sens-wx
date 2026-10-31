@@ -116,7 +116,7 @@
 <script setup lang="uts">
 	import { fetchCurrentUserInfo } from '../../common/auth'
 	import { formatMoney } from '../../common/money'
-	import { put } from '../../common/request'
+	import { get, post } from '../../common/request'
 
 	const statusBarHeight = ref(24)
 	const balanceText = ref('0.00')
@@ -126,6 +126,9 @@
 	const customAmount = ref('0')
 	const agreementAccepted = ref(true)
 	const paying = ref(false)
+	let paymentPollTimer = -1
+	let paymentPollCount = 0
+	let activeOutTradeNo = ''
 
 	onLoad(() => {
 		const sys = uni.getSystemInfoSync()
@@ -134,6 +137,10 @@
 
 	onShow(() => {
 		loadBalance()
+	})
+
+	onUnload(() => {
+		stopPaymentPolling()
 	})
 
 	function loadBalance (): void {
@@ -248,48 +255,174 @@
 		}
 
 		paying.value = true
-		// 微信支付接入位：当前直接按支付成功处理并入账。
-		uni.showLoading({
-			title: '支付中',
-			mask: true
+		uni.showLoading({ title: '请稍后', mask: true })
+		uni.login({
+			provider: 'weixin',
+			success: (loginRes) => {
+				const loginCode = loginRes.code
+				if (loginCode.length === 0) {
+					finishPayment()
+					uni.showToast({ title: '获取微信登录凭证失败', icon: 'none' })
+					return
+				}
+				submitRechargePayment(loginCode)
+			},
+			fail: () => {
+				finishPayment()
+				uni.showToast({ title: '获取微信登录凭证失败', icon: 'none' })
+			}
 		})
+	}
 
+	function submitRechargePayment (loginCode: string): void {
 		const amount = currentPayAmount()
-		const requestData = new UTSJSONObject()
-		requestData.set('balance', amount.toString())
-		requestData.set('payment_type', 1)
-
-		put('/user_info/balance/add', requestData, (res) => {
-			const code = res.getNumber('code', 0)
-			if (code !== 200) {
+		const body = new UTSJSONObject()
+		body.set('amount', amount.toString())
+		body.set('login_code', loginCode)
+		post('/payments/balance-recharge/orders', body, (res) => {
+			if (res.getNumber('code', 0) !== 200) {
 				finishPayment()
 				uni.showToast({
-					title: res.getString('message') ?? '支付失败',
+					title: res.getString('message') ?? '充值失败，请稍后重试',
 					icon: 'none'
 				})
 				return
 			}
-
-			const order = res.getJSON('data')
-			const paymentTime = order == null ? '' : (order.getString('payment_time') ?? '')
-			const orderNo = order == null ? '' : (order.getString('order_no') ?? '')
-
-			finishPayment()
-			uni.redirectTo({
-				url: '/pages/recharge-success/recharge-success?amount=' + amount.toString()
-					+ '&time=' + encodeURIComponent(paymentTime)
-					+ '&orderNo=' + encodeURIComponent(orderNo)
-			})
+			const data = res.getJSON('data')
+			if (data == null) {
+				finishPayment()
+				uni.showToast({ title: '充值订单数据为空', icon: 'none' })
+				return
+			}
+			if (data.getString('status') === 'PAID') {
+				finishPayment()
+				showRechargeSuccess(data, amount)
+				return
+			}
+			const outTradeNo = data.getString('out_trade_no') ?? ''
+			const payment = data.getJSON('payment')
+			if (outTradeNo.length === 0 || payment == null) {
+				finishPayment()
+				uni.showToast({ title: '微信支付参数不完整', icon: 'none' })
+				return
+			}
+			requestWechatPayment(outTradeNo, payment, amount)
 		}, (message) => {
 			finishPayment()
-			uni.showToast({
-				title: message,
-				icon: 'none'
-			})
+			uni.showToast({ title: message, icon: 'none' })
 		})
 	}
 
+	function requestWechatPayment (outTradeNo: string, payment: UTSJSONObject, amount: number): void {
+		uni.hideLoading()
+		// #ifdef MP-WEIXIN
+		uni.requestPayment({
+			provider: 'wxpay',
+			orderInfo: '',
+			timeStamp: payment.getString('time_stamp') ?? '',
+			nonceStr: payment.getString('nonce_str') ?? '',
+			package: payment.getString('package') ?? '',
+			signType: 'RSA',
+			paySign: payment.getString('pay_sign') ?? '',
+			success: () => {
+				startPaymentPolling(outTradeNo, amount)
+			},
+			fail: (error) => {
+				finishPayment()
+				const message = error.errMsg ?? ''
+				uni.showToast({
+					title: message.indexOf('cancel') >= 0 ? '已取消支付' : '微信支付未完成',
+					icon: 'none'
+				})
+			}
+		})
+		// #endif
+		// #ifndef MP-WEIXIN
+		finishPayment()
+		uni.showToast({ title: '当前平台不支持微信小程序支付', icon: 'none' })
+		// #endif
+	}
+
+	function startPaymentPolling (outTradeNo: string, amount: number): void {
+		stopPaymentPolling()
+		activeOutTradeNo = outTradeNo
+		paymentPollCount = 0
+		uni.showLoading({ title: '请稍后', mask: true })
+		schedulePaymentPoll(amount)
+	}
+
+	function schedulePaymentPoll (amount: number): void {
+		paymentPollTimer = setTimeout(() => {
+			pollPaymentStatus(amount)
+		}, 1200)
+	}
+
+	function pollPaymentStatus (amount: number): void {
+		paymentPollTimer = -1
+		if (activeOutTradeNo.length === 0) {
+			return
+		}
+		if (paymentPollCount >= 60) {
+			finishPayment()
+			uni.showToast({ title: '充值结果确认中，请稍后查看余额', icon: 'none' })
+			return
+		}
+		paymentPollCount++
+		const outTradeNo = activeOutTradeNo
+		get('/payments/orders/' + encodeURIComponent(outTradeNo) + '/status', (res) => {
+			if (activeOutTradeNo !== outTradeNo) {
+				return
+			}
+			if (res.getNumber('code', 0) !== 200) {
+				schedulePaymentPoll(amount)
+				return
+			}
+			const data = res.getJSON('data')
+			if (data == null) {
+				schedulePaymentPoll(amount)
+				return
+			}
+			const status = data.getString('status') ?? 'PENDING'
+			if (status === 'PAID') {
+				finishPayment()
+				showRechargeSuccess(data, amount)
+				return
+			}
+			if (status === 'CLOSED' || status === 'REFUNDED') {
+				finishPayment()
+				uni.showToast({ title: status === 'CLOSED' ? '充值订单已关闭' : '充值订单已退款', icon: 'none' })
+				return
+			}
+			schedulePaymentPoll(amount)
+		}, () => {
+			if (activeOutTradeNo === outTradeNo) {
+				schedulePaymentPoll(amount)
+			}
+		})
+	}
+
+	function showRechargeSuccess (data: UTSJSONObject, fallbackAmount: number): void {
+		const amount = data.getString('amount') ?? fallbackAmount.toString()
+		const paymentTime = data.getString('payment_time') ?? ''
+		const orderNo = data.getString('order_no') ?? (data.getString('out_trade_no') ?? '')
+		uni.redirectTo({
+			url: '/pages/recharge-success/recharge-success?amount=' + encodeURIComponent(amount)
+				+ '&time=' + encodeURIComponent(paymentTime)
+				+ '&orderNo=' + encodeURIComponent(orderNo)
+		})
+	}
+
+	function stopPaymentPolling (): void {
+		if (paymentPollTimer >= 0) {
+			clearTimeout(paymentPollTimer)
+			paymentPollTimer = -1
+		}
+		activeOutTradeNo = ''
+		paymentPollCount = 0
+	}
+
 	function finishPayment (): void {
+		stopPaymentPolling()
 		paying.value = false
 		uni.hideLoading()
 	}

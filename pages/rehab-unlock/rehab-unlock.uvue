@@ -55,7 +55,7 @@
 				<text class="total-amount">¥{{ priceText() }}</text>
 			</view>
 			<button class="pay-button" :disabled="paying || loading" hover-class="none" @click="handlePay">
-				<text class="pay-button-text">{{ paying ? '支付中...' : '立即支付' }}</text>
+				<text class="pay-button-text">{{ paying ? '请稍后...' : '立即支付' }}</text>
 			</button>
 		</view>
 	</view>
@@ -173,7 +173,7 @@
 
 	function payWithBalance (): void {
 		paying.value = true
-		uni.showLoading({ title: '支付中', mask: true })
+		uni.showLoading({ title: '请稍后', mask: true })
 		const body = new UTSJSONObject()
 		body.set('course_id', courseId.value)
 		body.set('stage_id', stageId.value)
@@ -198,7 +198,7 @@
 
 	function createWechatPayment (): void {
 		paying.value = true
-		uni.showLoading({ title: '创建支付订单', mask: true })
+		uni.showLoading({ title: '请稍后', mask: true })
 		uni.login({
 			provider: 'weixin',
 			success: (loginRes) => {
@@ -225,7 +225,7 @@
 		post('/payments/rehab-stage/orders', body, (res) => {
 			if (res.getNumber('code', 0) !== 200) {
 				finishPay()
-				uni.showToast({ title: res.getString('message') ?? '创建支付订单失败', icon: 'none' })
+				uni.showToast({ title: res.getString('message') ?? '支付失败，请稍后重试', icon: 'none' })
 				return
 			}
 			const data = res.getJSON('data')
@@ -288,7 +288,7 @@
 		stopPaymentPolling()
 		activeOutTradeNo = outTradeNo
 		paymentPollCount = 0
-		uni.showLoading({ title: '确认支付结果', mask: true })
+		uni.showLoading({ title: '请稍后', mask: true })
 		schedulePaymentPoll()
 	}
 
