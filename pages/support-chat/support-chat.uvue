@@ -114,7 +114,7 @@
 							>
 								<view class="course-kicker-row">
 									<text class="course-kicker">{{ serviceOrderKindText(item) }}</text>
-									<text class="course-paid">{{ item.order.statusText }}</text>
+									<text class="course-paid" :class="{ 'course-paid-refunded': item.order.statusText === '已退款' }">{{ item.order.statusText }}</text>
 								</view>
 								<text class="course-title">{{ item.order.title }}</text>
 								<text class="course-stage">{{ serviceOrderTime(item) }}</text>
@@ -1329,6 +1329,11 @@
 	.course-paid {
 		font-size: 10px;
 		color: #2FA66A;
+	}
+
+	.course-paid-refunded {
+		font-weight: 600;
+		color: #D92D20;
 	}
 
 	.course-title {

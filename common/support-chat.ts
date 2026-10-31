@@ -134,6 +134,8 @@ export class SupportChatServiceOrderCard {
 	paymentTypeText: string = ''
 	status: string = ''
 	statusText: string = ''
+	refundStatus: string = 'NONE'
+	refundedAt: string = ''
 	occurredAt: string = ''
 	createdReason: string = ''
 	courseId: string = ''
@@ -155,6 +157,8 @@ export class SupportChatServiceOrderCard {
 		const statusNumber = json.getNumber('status', -1)
 		this.status = statusText ?? (statusNumber >= 0 ? statusNumber.toString() : '')
 		this.statusText = json.getString('status_text') ?? ''
+		this.refundStatus = json.getString('refund_status') ?? 'NONE'
+		this.refundedAt = json.getString('refunded_at') ?? ''
 		this.occurredAt = json.getString('occurred_at') ?? ''
 		this.createdReason = json.getString('created_reason') ?? ''
 		this.courseId = json.getString('course_id') ?? ''
@@ -176,6 +180,8 @@ export class SupportChatServiceOrderOption {
 	paymentTypeText: string = ''
 	status: string = ''
 	statusText: string = ''
+	refundStatus: string = 'NONE'
+	refundedAt: string = ''
 	occurredAt: string = ''
 	occurredText: string = ''
 	createdReason: string = ''
@@ -196,6 +202,8 @@ export class SupportChatServiceOrderOption {
 		const statusNumber = json.getNumber('status', -1)
 		this.status = statusText ?? (statusNumber >= 0 ? statusNumber.toString() : '')
 		this.statusText = json.getString('status_text') ?? ''
+		this.refundStatus = json.getString('refund_status') ?? 'NONE'
+		this.refundedAt = json.getString('refunded_at') ?? ''
 		this.occurredAt = json.getString('occurred_at') ?? ''
 		this.createdReason = json.getString('created_reason') ?? ''
 		if (this.occurredAt.length > 0) {
@@ -218,6 +226,8 @@ export class SupportChatServiceOrderOption {
 		card.paymentTypeText = this.paymentTypeText
 		card.status = this.status
 		card.statusText = this.statusText
+		card.refundStatus = this.refundStatus
+		card.refundedAt = this.refundedAt
 		card.occurredAt = this.occurredAt
 		card.createdReason = this.createdReason
 		return card

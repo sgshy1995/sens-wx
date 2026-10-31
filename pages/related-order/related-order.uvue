@@ -13,8 +13,8 @@
 			<view class="amount-area">
 				<text class="amount-label">订单金额</text>
 				<text class="amount-value">¥{{ amountText }}</text>
-				<view class="status-pill">
-					<text class="status-text">{{ statusText }}</text>
+				<view class="status-pill" :class="{ 'status-pill-refunded': isRefunded }">
+					<text class="status-text" :class="{ 'status-text-refunded': isRefunded }">{{ statusText }}</text>
 				</view>
 			</view>
 		</view>
@@ -110,6 +110,7 @@
 	const orderTime = ref('--')
 	const paymentTime = ref('--')
 	const statusText = ref('已完成')
+	const isRefunded = ref(false)
 	const amountText = ref('0.00')
 	const shippingName = ref('')
 	const shippingPhone = ref('')
@@ -166,7 +167,13 @@
 			paymentType.value = paymentTypeText(data.getNumber('payment_type', 1))
 			orderTime.value = formatOrderTime(data.getString('order_time') ?? data.getString('payment_time') ?? '')
 			paymentTime.value = formatOrderTime(data.getString('payment_time') ?? '')
-			statusText.value = data.getString('status') === 'PAID' ? '交易成功' : '订单已关闭'
+			const wechatStatus = data.getString('status') ?? ''
+			statusText.value = wechatStatus === 'REFUNDED'
+				? '已退款'
+				: wechatStatus === 'PAID'
+					? '交易成功'
+					: '订单已关闭'
+			isRefunded.value = wechatStatus === 'REFUNDED'
 			amountText.value = formatMoney(Math.abs(Number(data.getString('payment_num') ?? '0')).toString(), 2)
 			canViewPlan.value = true
 		}, () => {
@@ -192,7 +199,8 @@
 			paymentType.value = paymentTypeText(data.getNumber('payment_type', 0))
 			orderTime.value = formatOrderTime(data.getString('order_time') ?? '')
 			paymentTime.value = formatOrderTime(data.getString('payment_time') ?? '')
-			statusText.value = orderStatusText(data.getNumber('status', 0))
+			statusText.value = refundStatusText(data.getString('refund_status') ?? '', orderStatusText(data.getNumber('status', 0)))
+			isRefunded.value = statusText.value === '已退款'
 			amountText.value = formatMoney(Math.abs(Number(data.getString('order_prices') ?? data.getString('payment_num') ?? '0')).toString(), 2)
 			canViewPlan.value = true
 		}, () => {
@@ -218,7 +226,8 @@
 			paymentType.value = paymentTypeText(data.getNumber('payment_type', 0))
 			orderTime.value = formatOrderTime(data.getString('order_time') ?? '')
 			paymentTime.value = formatOrderTime(data.getString('payment_time') ?? '')
-			statusText.value = orderStatusText(data.getNumber('status', 0))
+			statusText.value = refundStatusText(data.getString('refund_status') ?? '', orderStatusText(data.getNumber('status', 0)))
+			isRefunded.value = statusText.value === '已退款'
 			const totalValue = data.getString('payment_num') ?? data.getNumber('order_total', 0).toString()
 			amountText.value = formatMoney(Math.abs(Number(totalValue)).toString(), 2)
 			shippingName.value = data.getString('shipping_name') ?? ''
@@ -249,6 +258,16 @@
 			return '已退货'
 		}
 		return '已完成'
+	}
+
+	function refundStatusText (refundStatus: string, fallback: string): string {
+		if (refundStatus === 'REFUNDED' || refundStatus === 'SUCCESS') {
+			return '已退款'
+		}
+		if (refundStatus === 'PROCESSING') {
+			return '退款处理中'
+		}
+		return fallback
 	}
 
 	function showLoadError (message: string): void {
@@ -357,10 +376,18 @@
 		border-radius: 999px;
 	}
 
+	.status-pill-refunded {
+		background: #FFFFFF;
+	}
+
 	.status-text {
 		font-size: 11px;
 		font-weight: 500;
 		color: #FFFFFF;
+	}
+
+	.status-text-refunded {
+		color: #D92D20;
 	}
 
 	.content-scroll {

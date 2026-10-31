@@ -14,11 +14,19 @@ export class BalanceOrder {
 	amountText: string = ''
 	source: string = 'balance'
 	iconPath: string = ''
+	refundStatus: string = 'NONE'
+	refundedAt: string = ''
+	statusText: string = ''
+	statusLabel: string = ''
+	isRefunded: boolean = false
 
 	initFromJSON (json: UTSJSONObject): void {
 		this.id = json.getString('id') ?? ''
 		this.orderNo = json.getString('order_no') ?? ''
 		this.source = json.getString('source') ?? 'balance'
+		this.refundStatus = json.getString('refund_status') ?? 'NONE'
+		this.refundedAt = json.getString('refunded_at') ?? ''
+		this.statusText = json.getString('status') ?? json.getNumber('status', 0).toString()
 		this.amount = Number(json.getString('payment_num') ?? '0')
 		this.isIncome = this.amount >= 0
 		this.title = resolveTitle(json, this.isIncome)
@@ -43,7 +51,15 @@ export class BalanceOrder {
 			this.timeText = rawTime.length >= 16 ? rawTime.substring(0, 16).replace('T', ' ') : rawTime
 		}
 
-		this.subtitle = this.timeText + ' · ' + (this.isIncome ? '充值成功' : '交易成功')
+		let statusLabel = this.isIncome ? '充值成功' : '交易成功'
+		if (this.refundStatus === 'REFUNDED' || this.refundStatus === 'SUCCESS' || this.statusText === 'REFUNDED') {
+			statusLabel = '已退款'
+			this.isRefunded = true
+		} else if (this.refundStatus === 'PROCESSING') {
+			statusLabel = '退款处理中'
+		}
+		this.statusLabel = statusLabel
+		this.subtitle = this.timeText + ' · ' + statusLabel
 		const absolute = Math.abs(this.amount)
 		this.amountText = (this.isIncome ? '+¥' : '-¥') + formatMoney(absolute.toString(), 2)
 	}

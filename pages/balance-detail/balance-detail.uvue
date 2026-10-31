@@ -82,7 +82,10 @@
 						</view>
 						<view class="order-info">
 							<text class="order-title">{{ order.title }}</text>
-							<text class="order-subtitle">{{ order.subtitle }}</text>
+							<view class="order-subtitle-row">
+								<text class="order-subtitle">{{ order.timeText }} · </text>
+								<text class="order-subtitle" :class="{ 'order-subtitle-refunded': order.isRefunded }">{{ order.statusLabel }}</text>
+							</view>
 						</view>
 						<text class="order-amount" :class="{ 'order-amount-income': order.isIncome }">{{ order.amountText }}</text>
 						<view v-if="index < group.orders.length - 1" class="order-divider"></view>
@@ -565,6 +568,17 @@
 	.order-subtitle {
 		font-size: 11px;
 		color: #9CA3AF;
+	}
+
+	.order-subtitle-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.order-subtitle-refunded {
+		font-weight: 600;
+		color: #D92D20;
 	}
 
 	.order-amount {
