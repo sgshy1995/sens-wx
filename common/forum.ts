@@ -22,6 +22,32 @@ export function resolveFileUrl (path: string): string {
 	return FILE_BASE_URL + "/" + normalized
 }
 
+export class ForumDictionaryItem {
+	dictionaryId: string = ""
+	dictionaryName: string = ""
+	dictionaryItemId: string = ""
+	dictionaryItemName: string = ""
+
+	initFromJSON (json: UTSJSONObject): void {
+		const dictionaryId = json.getString("dictionary_id")
+		if (dictionaryId != null) {
+			this.dictionaryId = dictionaryId
+		}
+		const dictionaryName = json.getString("dictionary_name")
+		if (dictionaryName != null) {
+			this.dictionaryName = dictionaryName
+		}
+		const dictionaryItemId = json.getString("dictionary_item_id")
+		if (dictionaryItemId != null) {
+			this.dictionaryItemId = dictionaryItemId
+		}
+		const dictionaryItemName = json.getString("dictionary_item_name")
+		if (dictionaryItemName != null) {
+			this.dictionaryItemName = dictionaryItemName
+		}
+	}
+}
+
 export class ForumArticle {
 	id: string = ""
 	title: string = ""
@@ -38,6 +64,7 @@ export class ForumArticle {
 	isLiked: boolean = false
 	isCollected: boolean = false
 	tagName: string = ""
+	dictionaryItems: ForumDictionaryItem[] = []
 
 	initFromJSON (json: UTSJSONObject): void {
 		const id = json.getString("id")
@@ -95,6 +122,16 @@ export class ForumArticle {
 		const tagName = json.getString("tag_name")
 		if (tagName != null) {
 			this.tagName = tagName
+		}
+		const dictionaryItems = json.getArray<UTSJSONObject>("dictionary_items")
+		if (dictionaryItems != null) {
+			const parsed: ForumDictionaryItem[] = []
+			for (let i = 0; i < dictionaryItems.length; i++) {
+				const dictionaryItem = new ForumDictionaryItem()
+				dictionaryItem.initFromJSON(dictionaryItems[i])
+				parsed.push(dictionaryItem)
+			}
+			this.dictionaryItems = parsed
 		}
 		const createdAt = json.getString("created_at")
 		if (createdAt != null && createdAt.length >= 16) {

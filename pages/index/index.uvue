@@ -128,8 +128,15 @@
 						</view>
 					</template>
 
-					<view v-if="item.tagName.length > 0" class="article-tag-row">
-						<view class="article-tag-chip"><text class="article-tag-text">{{ displayTagTitle(item) }}</text></view>
+					<view v-if="item.tagName.length > 0 || item.dictionaryItems.length > 0" class="article-tag-row">
+						<view v-if="item.tagName.length > 0" class="article-tag-chip"><text class="article-tag-text">{{ displayTagTitle(item) }}</text></view>
+						<view
+							v-for="(dictionary, dictionaryIndex) in item.dictionaryItems"
+							:key="item.id + '-dictionary-' + dictionaryIndex"
+							class="article-dictionary-chip"
+						>
+							<text class="article-dictionary-text">{{ displayDictionaryTitle(dictionary) }}</text>
+						</view>
 					</view>
 
 					<view class="interact-row">
@@ -230,7 +237,7 @@
 	import { hasLocalToken } from '../../common/auth'
 	import { PrescriptionFilterDictionary, PrescriptionFilterItem } from '../../common/prescription-filter'
 	import { get, post } from '../../common/request'
-	import { ForumArticle, PrescriptionTag, formatCount, lastTagName, resolveFileUrl } from '../../common/forum'
+	import { ForumArticle, ForumDictionaryItem, PrescriptionTag, formatCount, lastTagName, resolveFileUrl } from '../../common/forum'
 
 	const statusBarHeight = ref(24)
 	const carousel = ref<ForumArticle[]>([])
@@ -328,6 +335,13 @@
 			return selectedTagTitle.value
 		}
 		return lastTagName(item.tagName)
+	}
+
+	function displayDictionaryTitle (dictionary: ForumDictionaryItem): string {
+		if (dictionary.dictionaryItemName.length > 0) {
+			return dictionary.dictionaryItemName
+		}
+		return dictionary.dictionaryName
 	}
 
 	function buildPresetTags (): void {
@@ -1337,6 +1351,11 @@
 		color: #6B7280;
 		line-height: 20px;
 		word-break: break-all;
+			display: -webkit-box;
+			-webkit-box-orient: vertical;
+			-webkit-line-clamp: 2;
+			overflow: hidden;
+			max-height: 40px;
 	}
 
 	.article-cover {
@@ -1367,6 +1386,8 @@
 	.article-tag-row {
 		display: flex;
 		flex-direction: row;
+			flex-wrap: wrap;
+			gap: 6px;
 	}
 
 	.article-tag-chip {
@@ -1385,6 +1406,27 @@
 		font-size: 11px;
 		color: #FF6B35;
 	}
+
+		.article-dictionary-chip {
+			display: flex;
+			flex-direction: row;
+			align-items: center;
+			max-width: 100%;
+			height: 24px;
+			padding-left: 8px;
+			padding-right: 8px;
+			background: #EEF2FF;
+			border-radius: 4px;
+		}
+
+		.article-dictionary-text {
+			font-family: "Noto Sans SC", sans-serif;
+			font-size: 11px;
+			color: #5B6CFF;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
 
 	.interact-row {
 		justify-content: space-between;
