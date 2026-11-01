@@ -45,9 +45,16 @@
 
 					<rich-text v-if="article.content.length > 0" class="article-content" :nodes="article.content"></rich-text>
 
-					<view v-if="article.tagName.length > 0" class="tag-row">
-						<view class="tag-chip">
+					<view v-if="article.tagName.length > 0 || article.dictionaryItems.length > 0" class="tag-row">
+						<view v-if="article.tagName.length > 0" class="tag-chip">
 							<text class="tag-text">{{ lastTagName(article.tagName) }}</text>
+						</view>
+						<view
+							v-for="(dictionary, dictionaryIndex) in article.dictionaryItems"
+							:key="article.id + '-dictionary-' + dictionaryIndex"
+							class="dictionary-chip"
+						>
+							<text class="dictionary-text">{{ displayDictionaryTitle(dictionary) }}</text>
 						</view>
 					</view>
 				</view>
@@ -146,7 +153,7 @@
 <script setup lang="uts">
 	import { hasLocalToken } from '../../common/auth'
 	import { get, post } from '../../common/request'
-	import { ForumArticleDetail, ForumCommentItem, lastTagName, resolveFileUrl } from '../../common/forum'
+	import { ForumArticleDetail, ForumCommentItem, ForumDictionaryItem, lastTagName, resolveFileUrl } from '../../common/forum'
 
 	const statusBarHeight = ref(24)
 	const articleId = ref('')
@@ -176,6 +183,13 @@
 
 	function goBack (): void {
 		uni.navigateBack()
+	}
+
+	function displayDictionaryTitle (dictionary: ForumDictionaryItem): string {
+		if (dictionary.dictionaryItemName.length > 0) {
+			return dictionary.dictionaryItemName
+		}
+		return dictionary.dictionaryName
 	}
 
 	function requireLogin (content: string): boolean {
@@ -661,6 +675,27 @@
 		font-family: "Noto Sans SC", sans-serif;
 		font-size: 11px;
 		color: #FF6B35;
+	}
+
+	.dictionary-chip {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		max-width: 100%;
+		height: 24px;
+		padding-left: 8px;
+		padding-right: 8px;
+		background: #EEF2FF;
+		border-radius: 4px;
+	}
+
+	.dictionary-text {
+		font-family: "Noto Sans SC", sans-serif;
+		font-size: 11px;
+		color: #5B6CFF;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.divider {

@@ -240,6 +240,7 @@ export class ForumArticleDetail {
 	isLiked: boolean = false
 	isCollected: boolean = false
 	tagName: string = ""
+	dictionaryItems: ForumDictionaryItem[] = []
 	timeText: string = ""
 
 	initFromJSON (json: UTSJSONObject): void {
@@ -294,6 +295,16 @@ export class ForumArticleDetail {
 		const tagName = json.getString("tag_name")
 		if (tagName != null) {
 			this.tagName = tagName
+		}
+		const dictionaryItems = json.getArray<UTSJSONObject>("dictionary_items")
+		if (dictionaryItems != null) {
+			const parsed: ForumDictionaryItem[] = []
+			for (let i = 0; i < dictionaryItems.length; i++) {
+				const dictionaryItem = new ForumDictionaryItem()
+				dictionaryItem.initFromJSON(dictionaryItems[i])
+				parsed.push(dictionaryItem)
+			}
+			this.dictionaryItems = parsed
 		}
 		const publishTime = json.getString("publish_time")
 		if (publishTime != null && publishTime.length >= 16) {
