@@ -133,9 +133,9 @@ export class ForumArticle {
 			}
 			this.dictionaryItems = parsed
 		}
-		const createdAt = json.getString("created_at")
-		if (createdAt != null && createdAt.length >= 16) {
-			this.timeText = formatArticleTime(createdAt)
+		const publishTime = json.getString("publish_time")
+		if (publishTime != null && publishTime.length >= 16) {
+			this.timeText = formatArticleTime(publishTime)
 		}
 	}
 }
@@ -295,18 +295,9 @@ export class ForumArticleDetail {
 		if (tagName != null) {
 			this.tagName = tagName
 		}
-		let timeValue = ""
 		const publishTime = json.getString("publish_time")
-		if (publishTime != null && publishTime.length > 0) {
-			timeValue = publishTime
-		} else {
-			const createdAt = json.getString("created_at")
-			if (createdAt != null) {
-				timeValue = createdAt
-			}
-		}
-		if (timeValue.length >= 16) {
-			this.timeText = formatArticleTime(timeValue)
+		if (publishTime != null && publishTime.length >= 16) {
+			this.timeText = formatArticleTime(publishTime)
 		}
 	}
 }
@@ -342,9 +333,19 @@ export class ForumCommentItem {
 		if (toName != null) {
 			this.toName = toName
 		}
-		const createdAt = json.getString("created_at")
-		if (createdAt != null && createdAt.length >= 16) {
-			this.timeText = formatArticleTime(createdAt)
+		let timeValue = ""
+		const publishTime = json.getString("publish_time")
+		if (publishTime != null && publishTime.length > 0) {
+			timeValue = publishTime
+		} else {
+			// Compatibility with the previous API before publish_time was exposed.
+			const auditTime = json.getString("audit_time")
+			if (auditTime != null) {
+				timeValue = auditTime
+			}
+		}
+		if (timeValue.length >= 16) {
+			this.timeText = formatArticleTime(timeValue)
 		}
 	}
 }
