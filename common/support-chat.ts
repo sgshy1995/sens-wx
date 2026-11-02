@@ -1,43 +1,30 @@
 import dayjs from 'dayjs'
 
 export class SupportChatCourseCard {
-	courseId: string = ''
-	courseTitle: string = ''
-	stageId: string = ''
-	stageTitle: string = ''
+	planOrderId: string = ''
+	planTitle: string = '专属康复方案'
+	tagName: string = ''
 	price: string = '0'
 	orderNo: string = ''
-	unlockedAt: string = ''
+	paidAt: string = ''
+	videoCount: number = 0
+	imageCount: number = 0
+	textCount: number = 0
+	status: string = ''
+	statusText: string = '已支付'
 
 	initFromJSON (json: UTSJSONObject): void {
-		const courseId = json.getString('course_id')
-		if (courseId != null) {
-			this.courseId = courseId
-		}
-		const courseTitle = json.getString('course_title')
-		if (courseTitle != null) {
-			this.courseTitle = courseTitle
-		}
-		const stageId = json.getString('stage_id')
-		if (stageId != null) {
-			this.stageId = stageId
-		}
-		const stageTitle = json.getString('stage_title')
-		if (stageTitle != null) {
-			this.stageTitle = stageTitle
-		}
-		const price = json.getString('price')
-		if (price != null) {
-			this.price = price
-		}
-		const orderNo = json.getString('order_no')
-		if (orderNo != null) {
-			this.orderNo = orderNo
-		}
-		const unlockedAt = json.getString('unlocked_at')
-		if (unlockedAt != null) {
-			this.unlockedAt = unlockedAt
-		}
+		this.planOrderId = json.getString('plan_order_id') ?? this.planOrderId
+		this.planTitle = json.getString('title') ?? this.planTitle
+		this.tagName = json.getString('tag_name') ?? this.tagName
+		this.price = json.getString('payment_num') ?? json.getString('price') ?? this.price
+		this.orderNo = json.getString('order_no') ?? this.orderNo
+		this.paidAt = json.getString('paid_at') ?? this.paidAt
+		this.videoCount = json.getNumber('video_count') ?? this.videoCount
+		this.imageCount = json.getNumber('image_count') ?? this.imageCount
+		this.textCount = json.getNumber('text_count') ?? this.textCount
+		this.status = json.getString('status') ?? this.status
+		this.statusText = json.getString('status_text') ?? this.statusText
 	}
 }
 
@@ -53,6 +40,7 @@ export class SupportChatMessage {
 	mediaSize: number = 0
 	mediaDuration: number = 0
 	course: SupportChatCourseCard | null = null
+	plan: SupportChatCourseCard | null = null
 	order: SupportChatServiceOrderCard | null = null
 	createdAt: string = ''
 	timeText: string = ''
@@ -100,11 +88,11 @@ export class SupportChatMessage {
 		if (mediaDuration != null) {
 			this.mediaDuration = mediaDuration
 		}
-		const courseJson = json.getJSON('course')
-		if (courseJson != null) {
+		const planJson = json.getJSON('plan')
+		if (planJson != null) {
 			const card = new SupportChatCourseCard()
-			card.initFromJSON(courseJson)
-			this.course = card
+			card.initFromJSON(planJson)
+			this.plan = card
 		}
 		const orderJson = json.getJSON('order')
 		if (orderJson != null) {
@@ -138,8 +126,8 @@ export class SupportChatServiceOrderCard {
 	refundedAt: string = ''
 	occurredAt: string = ''
 	createdReason: string = ''
-	courseId: string = ''
-	stageId: string = ''
+	planOrderId: string = ''
+	tagName: string = ''
 
 	initFromJSON (json: UTSJSONObject): void {
 		this.kind = json.getString('kind') ?? ''
@@ -161,8 +149,8 @@ export class SupportChatServiceOrderCard {
 		this.refundedAt = json.getString('refunded_at') ?? ''
 		this.occurredAt = json.getString('occurred_at') ?? ''
 		this.createdReason = json.getString('created_reason') ?? ''
-		this.courseId = json.getString('course_id') ?? ''
-		this.stageId = json.getString('stage_id') ?? ''
+		this.planOrderId = json.getString('plan_order_id') ?? ''
+		this.tagName = json.getString('tag_name') ?? ''
 	}
 }
 
@@ -235,56 +223,67 @@ export class SupportChatServiceOrderOption {
 }
 
 export class SupportChatCourseOption {
-	courseId: string = ''
-	courseTitle: string = ''
-	stageId: string = ''
-	stageTitle: string = ''
+	planOrderId: string = ''
+	planTitle: string = '专属康复方案'
+	tagName: string = ''
 	price: string = '0'
 	orderNo: string = ''
-	unlockedAt: string = ''
+	paidAt: string = ''
 	unlockedText: string = ''
+	selectedLabels: string[] = []
 
 	initFromJSON (json: UTSJSONObject): void {
-		const courseId = json.getString('course_id')
-		if (courseId != null) {
-			this.courseId = courseId
+		this.planOrderId = json.getString('plan_order_id') ?? this.planOrderId
+		this.planTitle = json.getString('title') ?? this.planTitle
+		this.tagName = json.getString('tag_name') ?? this.tagName
+		this.price = json.getString('amount') ?? this.price
+		this.orderNo = json.getString('order_no') ?? this.orderNo
+		const paidAt = json.getString('paid_at')
+		if (paidAt != null) {
+			this.paidAt = paidAt
+			this.unlockedText = formatSupportChatTime(paidAt)
 		}
-		const courseTitle = json.getString('course_title')
-		if (courseTitle != null) {
-			this.courseTitle = courseTitle
+		const labels = json.getArray<string>('selected_labels')
+		if (labels != null) {
+			this.selectedLabels = labels
 		}
-		const stageId = json.getString('stage_id')
-		if (stageId != null) {
-			this.stageId = stageId
+	}
+
+	selectionSummary (): string {
+		let text = ''
+		const limit = this.selectedLabels.length > 5 ? 5 : this.selectedLabels.length
+		for (let i = 0; i < limit; i++) {
+			if (text.length > 0) {
+				text += ' · '
+			}
+			text += this.selectedLabels[i]
 		}
-		const stageTitle = json.getString('stage_title')
-		if (stageTitle != null) {
-			this.stageTitle = stageTitle
+		if (this.selectedLabels.length > 5) {
+			text += ' 等'
 		}
-		const price = json.getString('price')
-		if (price != null) {
-			this.price = price
+		return text.length > 0 ? text : this.tagName
+	}
+
+	displayLabels (): string[] {
+		const labels: string[] = []
+		for (let i = 0; i < this.selectedLabels.length && i < 5; i++) {
+			labels.push(this.selectedLabels[i])
 		}
-		const orderNo = json.getString('order_no')
-		if (orderNo != null) {
-			this.orderNo = orderNo
-		}
-		const unlockedAt = json.getString('unlocked_at')
-		if (unlockedAt != null) {
-			this.unlockedAt = unlockedAt
-			this.unlockedText = formatSupportChatTime(unlockedAt)
-		}
+		return labels
+	}
+
+	hasMoreLabels (): boolean {
+		return this.selectedLabels.length > 5
 	}
 
 	toCard (): SupportChatCourseCard {
 		const card = new SupportChatCourseCard()
-		card.courseId = this.courseId
-		card.courseTitle = this.courseTitle
-		card.stageId = this.stageId
-		card.stageTitle = this.stageTitle
+		card.planOrderId = this.planOrderId
+		card.planTitle = this.planTitle
+		card.tagName = this.tagName
 		card.price = this.price
 		card.orderNo = this.orderNo
-		card.unlockedAt = this.unlockedAt
+		card.paidAt = this.paidAt
 		return card
 	}
 }

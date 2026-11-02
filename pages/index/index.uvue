@@ -171,7 +171,7 @@
 				</view>
 				<scroll-view class="picker-scroll" scroll-y>
 					<view class="picker-level">
-						<text class="picker-level-title">复健类型</text>
+						<text class="picker-level-title">康复标签</text>
 						<view class="picker-options">
 							<view
 								v-for="tag in pickerLevel1Tags"
@@ -185,10 +185,10 @@
 						</view>
 					</view>
 					<view v-if="pickerSelectedTagId.length > 0 && pickerDictionariesLoading" class="picker-state">
-						<text class="picker-state-text">正在加载处方字典...</text>
+						<text class="picker-state-text">正在加载康复标签...</text>
 					</view>
 					<view v-else-if="pickerSelectedTagId.length > 0 && pickerDictionaries.length === 0" class="picker-state">
-						<text class="picker-state-text">该复健类型下暂无处方字典</text>
+						<text class="picker-state-text">该康复标签下暂无可选分类</text>
 					</view>
 					<template v-else>
 						<view v-for="dictionary in pickerDictionaries" :key="dictionary.id" class="picker-level">
@@ -446,15 +446,18 @@
 		loading.value = true
 		const listPath = hasLocalToken() ? '/forum_article' : '/forum_article/public'
 		let url = listPath + '?pageNo=' + page.value + '&pageSize=' + pageSize.value
-		if (selectedFilterItemIds.value.length > 0) {
-			let tagIds = ''
+		if (customMode.value && customTagId.value.length > 0) {
+			url += '&tag=' + encodeURIComponent(customTagId.value)
+		}
+		if (customMode.value && selectedFilterItemIds.value.length > 0) {
+			let itemIds = ''
 			for (let i = 0; i < selectedFilterItemIds.value.length; i++) {
-				if (tagIds.length > 0) {
-					tagIds += ','
+				if (itemIds.length > 0) {
+					itemIds += ','
 				}
-				tagIds += selectedFilterItemIds.value[i]
+				itemIds += selectedFilterItemIds.value[i]
 			}
-			url += '&tag_ids=' + encodeURIComponent(tagIds)
+			url += '&dictionary_item_ids=' + encodeURIComponent(itemIds)
 		} else if (selectedTagId.value.length > 0) {
 			url += '&tag=' + selectedTagId.value
 		}
@@ -674,7 +677,7 @@
 		pickerDictionaryRequestVersion += 1
 		const version = pickerDictionaryRequestVersion
 		pickerDictionariesLoading.value = true
-		get('/prescription_tag_dictionary/mini_find?prescription_tag_id=' + encodeURIComponent(tagId), (res) => {
+		get('/prescription_tag_dictionary/mini_find?prescription_tag_id=' + encodeURIComponent(tagId) + '&filter_mode=decrease', (res) => {
 			if (version !== pickerDictionaryRequestVersion) {
 				return
 			}
@@ -688,7 +691,7 @@
 				for (let i = 0; i < items.length; i++) {
 					const dictionary = new PrescriptionFilterDictionary()
 					dictionary.initFromJSON(items[i])
-					if (dictionary.items.length > 0) {
+					if (dictionary.items.length > 0 && dictionary.filterMode === 'decrease') {
 						parsed.push(dictionary)
 					}
 				}
@@ -754,11 +757,7 @@
 
 	function confirmPicker (): void {
 		if (pickerSelectedTagId.value.length === 0) {
-			showNotice('请选择复健类型')
-			return
-		}
-		if (pickerSelectedItemIds.value.length === 0) {
-			showNotice('请至少选择一个字典项')
+			showNotice('请选择康复标签')
 			return
 		}
 		customMode.value = true
@@ -768,9 +767,9 @@
 			selectedFilterItemIds.value.push(pickerSelectedItemIds.value[i])
 		}
 		const summary = pickerSelectedSummary()
-		selectedTagId.value = selectedFilterItemIds.value[0]
-		selectedTagTitle.value = summary
-		customTagTitle.value = summary
+		selectedTagId.value = pickerSelectedTagId.value
+		selectedTagTitle.value = pickerSelectedTagTitle.value
+		customTagTitle.value = summary.length > 0 ? summary : pickerSelectedTagTitle.value
 		pickerVisible.value = false
 		loadList(true)
 	}

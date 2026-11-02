@@ -62,9 +62,9 @@
 						<view
 							class="message-bubble"
 							:class="{
-								'user-bubble': item.senderRole === 'user' && item.messageType !== 'course' && item.messageType !== 'recharge' && item.messageType !== 'consume',
+								'user-bubble': item.senderRole === 'user' && item.messageType !== 'plan' && item.messageType !== 'recharge' && item.messageType !== 'consume',
 								'coach-bubble': item.senderRole !== 'user',
-								'course-bubble': item.messageType === 'course' || item.messageType === 'recharge' || item.messageType === 'consume'
+								'course-bubble': item.messageType === 'plan' || item.messageType === 'recharge' || item.messageType === 'consume'
 							}"
 						>
 							<text
@@ -91,10 +91,10 @@
 								></video>
 							</view>
 
-							<view v-else-if="item.messageType === 'course' && item.course != null" class="course-message">
+							<view v-else-if="item.messageType === 'plan' && item.plan != null" class="course-message">
 								<view class="course-kicker-row">
-									<text class="course-kicker">组合课程订单</text>
-									<text class="course-paid">已支付</text>
+									<text class="course-kicker">康复方案订单</text>
+									<text class="course-paid" :class="{ 'course-paid-refunded': item.plan.status === 'REFUNDED' }">{{ planStatusText(item) }}</text>
 								</view>
 								<text class="course-title">{{ courseTitle(item) }}</text>
 								<text class="course-stage">{{ courseStage(item) }}</text>
@@ -262,25 +262,32 @@
 					</template>
 					<template v-else>
 						<view v-if="loadingCourses" class="sheet-state">
-							<text class="sheet-state-text">正在加载课程订单...</text>
+							<text class="sheet-state-text">正在加载康复方案...</text>
 						</view>
 						<view v-else-if="orderCourses.length === 0" class="sheet-state">
-							<text class="empty-order-title">暂无可咨询的课程订单</text>
-							<text class="empty-order-subtitle">解锁组合方案后，可在这里发送订单卡片</text>
+							<text class="empty-order-title">暂无可咨询的康复方案</text>
+							<text class="empty-order-subtitle">购买康复方案后，可在这里发送方案卡片</text>
 						</view>
 						<template v-else>
 							<view
 								v-for="course in orderCourses"
-								:key="course.courseId + '-' + course.stageId"
+								:key="course.planOrderId"
 								class="order-option"
-								:class="{ 'order-option-highlight': course.stageId === highlightStageId }"
+								:class="{ 'order-option-highlight': course.planOrderId === highlightPlanOrderId }"
 								@click="sendCourseMessage(course)"
 							>
 								<view class="order-option-head">
-									<text class="order-option-title">{{ course.courseTitle }}</text>
+									<text class="order-option-title">{{ course.planTitle }}</text>
 									<text class="order-option-price">¥{{ course.price }}</text>
 								</view>
-								<text class="order-option-stage">{{ course.stageTitle }}</text>
+								<view class="order-option-labels">
+									<view v-for="(label, labelIndex) in course.displayLabels()" :key="label + labelIndex" class="order-option-label">
+										<text class="order-option-label-text">{{ label }}</text>
+									</view>
+									<view v-if="course.hasMoreLabels()" class="order-option-label order-option-label-more">
+										<text class="order-option-label-text order-option-label-more-text">等</text>
+									</view>
+								</view>
 								<view class="order-option-foot">
 									<text class="order-option-no">订单 {{ course.orderNo }}</text>
 									<text class="order-option-time">{{ course.unlockedText }}</text>
@@ -316,9 +323,9 @@
 	const adminName = ref('易赴康-康复师')
 	const adminAvatar = ref('/static/icons/ic-help-avatar.png')
 	const welcomeText = ref('您好，我是您的在线康复师。使用程序、日常训练或课程订单遇到问题时，都可以在这里告诉我。')
-	const orderButtonText = ref('订单')
+	const orderButtonText = ref('方案')
 	const orderSheetTitle = ref('选择要咨询的康复方案')
-	const orderSheetSubtitle = ref('仅展示已解锁的康复方案')
+	const orderSheetSubtitle = ref('仅展示已购买的康复方案')
 	const messages = ref<SupportChatMessage[]>([])
 	const orderCourses = ref<SupportChatCourseOption[]>([])
 	const serviceOrders = ref<SupportChatServiceOrderOption[]>([])
@@ -340,7 +347,7 @@
 	const scrollTop = ref(0)
 	const actionsVisible = ref(false)
 	const orderSheetVisible = ref(false)
-	const highlightStageId = ref('')
+	const highlightPlanOrderId = ref('')
 
 	let pollTimer: number = -1
 	let scrollTimer: number = -1
@@ -370,13 +377,13 @@
 		} else {
 			adminName.value = '易赴康-康复师'
 			adminAvatar.value = '/static/icons/ic-help-avatar.png'
-			welcomeText.value = '您好，我是您的在线康复师。使用程序、日常训练或课程订单遇到问题时，都可以在这里告诉我。'
-			orderButtonText.value = '订单'
+			welcomeText.value = '您好，我是您的在线康复师。使用程序、日常训练或康复方案遇到问题时，都可以在这里告诉我。'
+			orderButtonText.value = '方案'
 			orderSheetTitle.value = '选择要咨询的康复方案'
-			orderSheetSubtitle.value = '仅展示已解锁的康复方案'
+			orderSheetSubtitle.value = '仅展示已购买的康复方案'
 		}
-		if (options['stageId'] != null) {
-			highlightStageId.value = options['stageId'] as string
+		if (options['planOrderId'] != null) {
+			highlightPlanOrderId.value = options['planOrderId'] as string
 		}
 		initialized = true
 		loadInitial()
@@ -800,14 +807,14 @@
 			return
 		}
 		loadingCourses.value = true
-		get('/support_chat/courses', (res) => {
+		get('/support_chat/plans', (res) => {
 			loadingCourses.value = false
 			if (res.getNumber('code', 0) !== 200) {
-				showError(res.getString('message') ?? '课程订单加载失败')
+				showError(res.getString('message') ?? '康复方案加载失败')
 				return
 			}
 			const data = res.getJSON('data')
-			const list = data == null ? null : data.getArray<UTSJSONObject>('courses')
+			const list = data == null ? null : data.getArray<UTSJSONObject>('plans')
 			const parsed: SupportChatCourseOption[] = []
 			if (list != null) {
 				for (let i = 0; i < list.length; i++) {
@@ -952,19 +959,18 @@
 		if (sending.value) {
 			return
 		}
-		const temp = createTempMessage('course', '')
-		temp.course = course.toCard()
+		const temp = createTempMessage('plan', '')
+		temp.plan = course.toCard()
 		messages.value.push(temp)
 		orderSheetVisible.value = false
 		sending.value = true
 		scheduleScrollToBottom()
 		const body = new UTSJSONObject()
-		body.set('message_type', 'course')
-		body.set('course_id', course.courseId)
-		body.set('stage_id', course.stageId)
+		body.set('message_type', 'plan')
+		body.set('plan_order_id', course.planOrderId)
 		post(chatApiBase() + '/messages', body, (res) => {
 			sending.value = false
-			handleSendResult(res, temp.id, '课程订单发送失败')
+			handleSendResult(res, temp.id, '康复方案发送失败')
 		}, (message) => {
 			sending.value = false
 			markMessageFailed(temp.id)
@@ -973,28 +979,31 @@
 	}
 
 	function courseTitle (message: SupportChatMessage): string {
-		return message.course == null ? '' : message.course.courseTitle
+		return message.plan == null ? '' : message.plan.planTitle
 	}
 
 	function courseStage (message: SupportChatMessage): string {
-		return message.course == null ? '' : message.course.stageTitle
+		return message.plan == null ? '' : message.plan.tagName
 	}
 
 	function coursePrice (message: SupportChatMessage): string {
-		return message.course == null ? '0' : message.course.price
+		return message.plan == null ? '0' : message.plan.price
 	}
 
 	function courseOrderNo (message: SupportChatMessage): string {
-		return message.course == null ? '' : message.course.orderNo
+		return message.plan == null ? '' : message.plan.orderNo
+	}
+
+	function planStatusText (message: SupportChatMessage): string {
+		return message.plan == null ? '' : message.plan.statusText
 	}
 
 	function openCourse (message: SupportChatMessage): void {
-		if (message.course == null || message.course.stageId.length === 0) {
+		if (message.plan == null || message.plan.planOrderId.length === 0) {
 			return
 		}
 		uni.navigateTo({
-			url: '/pages/rehab-plan/rehab-plan?stageId=' + encodeURIComponent(message.course.stageId)
-				+ '&courseTitle=' + encodeURIComponent(message.course.courseTitle)
+			url: '/pages/rehab-plan/rehab-plan?planOrderId=' + encodeURIComponent(message.plan.planOrderId)
 		})
 	}
 
@@ -1826,6 +1835,40 @@
 		margin-top: 5px;
 		font-size: 12px;
 		color: #727983;
+	}
+
+	.order-option-labels {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin-top: 8px;
+	}
+
+	.order-option-label {
+		display: flex;
+		max-width: 100%;
+		padding: 4px 8px;
+		border: 1px solid #FFE1D3;
+		border-radius: 8px;
+		background: #FFF8F4;
+		box-sizing: border-box;
+	}
+
+	.order-option-label-text {
+		font-size: 10px;
+		line-height: 15px;
+		color: #8A5B48;
+		word-break: break-all;
+	}
+
+	.order-option-label-more {
+		border-color: #E7E9ED;
+		background: #F5F6F8;
+	}
+
+	.order-option-label-more-text {
+		color: #7F858E;
 	}
 
 	.order-option-foot {

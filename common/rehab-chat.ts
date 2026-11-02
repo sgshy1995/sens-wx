@@ -1,248 +1,105 @@
 import dayjs from 'dayjs'
 
-export class RehabChatStage {
-	id: string = ""
-	title: string = ""
-	remark: string = ""
-	sort: number = 0
-	price: string = "0"
-	discountPrice: string = ""
-	unlockPrice: string = "0"
-	dictionaryItemName: string = ""
-	totalStageCount: number = 0
+export class RehabChatPlan {
+	prescriptionTagId: string = ''
+	tagName: string = ''
+	planSignature: string = ''
+	videoCount: number = 0
+	imageCount: number = 0
+	textCount: number = 0
+	totalCount: number = 0
+	price: string = ''
+	originalPrice: string = ''
+	isDiscount: boolean = false
+	dictionaryItemIds: string[] = []
+	selectedLabels: string[] = []
 
 	initFromJSON (json: UTSJSONObject): void {
-		const id = json.getString("id")
-		if (id != null) {
-			this.id = id
-		}
-		const title = json.getString("title")
-		if (title != null) {
-			this.title = title
-		}
-		const remark = json.getString("remark")
-		if (remark != null) {
-			this.remark = remark
-		}
-		const sort = json.getNumber("sort")
-		if (sort != null) {
-			this.sort = sort
-		}
-		const price = json.getString("price")
-		if (price != null) {
-			this.price = price
-		}
-		const discountPrice = json.getString("discount_price")
-		if (discountPrice != null) {
-			this.discountPrice = discountPrice
-		}
-		const unlockPrice = json.getString("unlock_price")
-		if (unlockPrice != null) {
-			this.unlockPrice = unlockPrice
-		}
-		const dictionaryItemName = json.getString("dictionary_item_name")
-		if (dictionaryItemName != null) {
-			this.dictionaryItemName = dictionaryItemName
-		}
-		const totalStageCount = json.getNumber("total_stage_count")
-		if (totalStageCount != null) {
-			this.totalStageCount = totalStageCount
-		}
-	}
-}
-
-export class RehabChatCourse {
-	id: string = ""
-	stageId: string = ""
-	title: string = ""
-	remark: string = ""
-	tagName: string = ""
-	stageDictionaryName: string = ""
-	stageTitle: string = ""
-	stageIndexText: string = ""
-	stageRemark: string = ""
-	unlockPrice: string = "0"
-	unlockButtonText: string = "立即解锁"
-	dictionaryText: string = ""
-	unlocked: boolean = false
-	stages: RehabChatStageInfo[] = []
-
-	initFromJSON (json: UTSJSONObject): void {
-		const id = json.getString("id")
-		if (id != null) {
-			this.id = id
-		}
-		const title = json.getString("title")
-		if (title != null) {
-			this.title = title
-		}
-		const remark = json.getString("remark")
-		if (remark != null) {
-			this.remark = remark
-		}
-		const tagName = json.getString("tag_name")
-		if (tagName != null) {
-			this.tagName = tagName
-		}
-		const stageDictionaryName = json.getString("stage_dictionary_name")
-		if (stageDictionaryName != null) {
-			this.stageDictionaryName = stageDictionaryName
-		}
-		const unlockPrice = json.getString("unlock_price")
-		if (unlockPrice != null) {
-			this.unlockPrice = unlockPrice
-		}
-		const unlockButtonText = json.getString("unlock_button_text")
-		if (unlockButtonText != null) {
-			this.unlockButtonText = unlockButtonText
-		}
-		const unlocked = json.getBoolean("unlocked")
-		if (unlocked != null) {
-			this.unlocked = unlocked
-		}
-		const items = json.getArray<UTSJSONObject>("dictionary_items")
-		if (items != null) {
-			let text = ""
-			for (let i = 0; i < items.length; i++) {
-				const name = items[i].getString("name") ?? ""
-				if (name.length > 0) {
-					if (text.length > 0) {
-						text += " · "
-					}
-					text += name
+		this.prescriptionTagId = json.getString('prescription_tag_id') ?? this.prescriptionTagId
+		this.tagName = json.getString('tag_name') ?? this.tagName
+		this.planSignature = json.getString('plan_signature') ?? this.planSignature
+		this.videoCount = json.getNumber('video_count') ?? this.videoCount
+		this.imageCount = json.getNumber('image_count') ?? this.imageCount
+		this.textCount = json.getNumber('text_count') ?? this.textCount
+		this.totalCount = json.getNumber('total_count') ?? this.totalCount
+		this.price = json.getString('price') ?? this.price
+		this.originalPrice = json.getString('original_price') ?? this.originalPrice
+		this.isDiscount = json.getBoolean('is_discount') ?? this.isDiscount
+		const conditions = json.getArray<UTSJSONObject>('conditions')
+		if (conditions != null) {
+			const itemIds: string[] = []
+			const labels: string[] = []
+			for (let i = 0; i < conditions.length; i++) {
+				itemIds.push(conditions[i].getString('dictionary_item_id') ?? '')
+				const itemName = conditions[i].getString('item_name') ?? ''
+				if (itemName.length > 0) {
+					const dictionaryName = conditions[i].getString('dictionary_name') ?? ''
+					labels.push(dictionaryName.length > 0 ? dictionaryName + '：' + itemName : itemName)
 				}
 			}
-			this.dictionaryText = text
-		}
-		const stageJson = json.getJSON("stage")
-		if (stageJson != null) {
-			const stage = new RehabChatStage()
-			stage.initFromJSON(stageJson)
-			this.stageId = stage.id
-			this.stageTitle = stage.title
-			this.stageRemark = stage.remark
-			this.unlockPrice = stage.unlockPrice
-			this.stageIndexText = stage.dictionaryItemName
-			if (this.unlockPrice.length > 0) {
-				this.unlockButtonText = "¥" + this.unlockPrice + " 立即解锁"
-			}
-		}
-		const stagesJson = json.getArray<UTSJSONObject>("stages")
-		if (stagesJson != null) {
-			const parsedStages: RehabChatStageInfo[] = []
-			for (let i = 0; i < stagesJson.length; i++) {
-				const stageInfo = new RehabChatStageInfo()
-				stageInfo.initFromJSON(stagesJson[i])
-				parsedStages.push(stageInfo)
-			}
-			this.stages = parsedStages
+			this.dictionaryItemIds = itemIds
+			this.selectedLabels = labels
 		}
 	}
-}
 
-export class RehabChatStageInfo {
-	id: string = ""
-	title: string = ""
-	dictionaryItemName: string = ""
-	isCurrent: boolean = false
-
-	initFromJSON (json: UTSJSONObject): void {
-		const id = json.getString("id")
-		if (id != null) {
-			this.id = id
-		}
-		const title = json.getString("title")
-		if (title != null) {
-			this.title = title
-		}
-		const dictionaryItemName = json.getString("dictionary_item_name")
-		if (dictionaryItemName != null) {
-			this.dictionaryItemName = dictionaryItemName
-		}
-		const isCurrent = json.getBoolean("is_current")
-		if (isCurrent != null) {
-			this.isCurrent = isCurrent
-		}
+	resourceSummary (): string {
+		return this.videoCount.toString() + ' 视频 · ' + this.imageCount.toString() + ' 图片 · ' + this.textCount.toString() + ' 文字'
 	}
 }
 
 export class RehabChatMessage {
-	id: string = ""
-	role: string = ""
-	content: string = ""
-	messageType: string = "text"
-	matchStatus: string = ""
-	createdAt: string = ""
-	timeText: string = ""
-	course: RehabChatCourse | null = null
+	id: string = ''
+	role: string = ''
+	content: string = ''
+	messageType: string = 'text'
+	matchStatus: string = ''
+	createdAt: string = ''
+	timeText: string = ''
+	plan: RehabChatPlan | null = null
 	pending: boolean = false
 	visible: boolean = true
 	streaming: boolean = false
 
 	initFromJSON (json: UTSJSONObject): void {
-		const id = json.getString("id")
-		if (id != null) {
-			this.id = id
-		}
-		const role = json.getString("role")
-		if (role != null) {
-			this.role = role
-		}
-		const content = json.getString("content")
-		if (content != null) {
-			this.content = content
-		}
-		const messageType = json.getString("message_type")
-		if (messageType != null) {
-			this.messageType = messageType
-		}
-		const matchStatus = json.getString("match_status")
-		if (matchStatus != null) {
-			this.matchStatus = matchStatus
-		}
-		const createdAt = json.getString("created_at")
+		this.id = json.getString('id') ?? this.id
+		this.role = json.getString('role') ?? this.role
+		this.content = json.getString('content') ?? this.content
+		this.messageType = json.getString('message_type') ?? this.messageType
+		this.matchStatus = json.getString('match_status') ?? this.matchStatus
+		const createdAt = json.getString('created_at')
 		if (createdAt != null) {
 			this.createdAt = createdAt
 			this.timeText = formatChatTime(createdAt)
 		}
-		const matchResult = json.getJSON("match_result")
+		const matchResult = json.getJSON('match_result')
 		if (matchResult != null) {
-			const courseJson = matchResult.getJSON("course")
-			if (courseJson != null) {
-				const course = new RehabChatCourse()
-				course.initFromJSON(courseJson)
-				this.course = course
+			const planJson = matchResult.getJSON('plan')
+			if (planJson != null) {
+				const plan = new RehabChatPlan()
+				plan.initFromJSON(planJson)
+				this.plan = plan
 			}
 		}
 	}
 }
 
 export class RehabChatTopic {
-	id: string = ""
-	title: string = ""
+	id: string = ''
+	title: string = ''
 	messageCount: number = 0
-	lastMessageAt: string = ""
-	timeText: string = ""
+	lastMessageAt: string = ''
+	timeText: string = ''
 
 	initFromJSON (json: UTSJSONObject): void {
-		const id = json.getString("id")
-		if (id != null) {
-			this.id = id
-		}
-		const title = json.getString("title")
-		if (title != null) {
-			this.title = title
-		}
-		const messageCount = json.getNumber("message_count")
-		if (messageCount != null) {
-			this.messageCount = messageCount
-		}
-		const lastMessageAt = json.getString("last_message_at")
+		this.id = json.getString('id') ?? this.id
+		this.title = json.getString('title') ?? this.title
+		this.messageCount = json.getNumber('message_count') ?? this.messageCount
+		const lastMessageAt = json.getString('last_message_at')
 		if (lastMessageAt != null && lastMessageAt.length > 0) {
 			this.lastMessageAt = lastMessageAt
 			this.timeText = formatChatTime(lastMessageAt)
 		} else {
-			const createdAt = json.getString("created_at")
+			const createdAt = json.getString('created_at')
 			if (createdAt != null) {
 				this.lastMessageAt = createdAt
 				this.timeText = formatChatTime(createdAt)
@@ -257,11 +114,11 @@ export function formatChatTime (createdAt: string): string {
 		return createdAt.substring(11, 16)
 	}
 	const now = dayjs()
-	if (now.isSame(created, "day")) {
-		return created.format("HH:mm")
+	if (now.isSame(created, 'day')) {
+		return created.format('HH:mm')
 	}
-	if (now.isSame(created, "year")) {
-		return created.format("MM-DD HH:mm")
+	if (now.isSame(created, 'year')) {
+		return created.format('MM-DD HH:mm')
 	}
-	return created.format("YYYY-MM-DD HH:mm")
+	return created.format('YYYY-MM-DD HH:mm')
 }

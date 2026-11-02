@@ -2,10 +2,9 @@ import dayjs from 'dayjs'
 
 export class PurchasedPlan {
 	id: string = ''
-	courseId: string = ''
-	courseTitle: string = ''
-	stageId: string = ''
-	stageTitle: string = ''
+	planOrderId: string = ''
+	tagName: string = ''
+	title: string = ''
 	price: string = '0'
 	orderNo: string = ''
 	paymentType: number = 0
@@ -19,26 +18,10 @@ export class PurchasedPlan {
 		if (id != null) {
 			this.id = id
 		}
-		const courseId = json.getString('course_id')
-		if (courseId != null) {
-			this.courseId = courseId
-		}
-		const courseTitle = json.getString('course_title')
-		if (courseTitle != null) {
-			this.courseTitle = courseTitle
-		}
-		const stageId = json.getString('stage_id')
-		if (stageId != null) {
-			this.stageId = stageId
-		}
-		const stageTitle = json.getString('stage_title')
-		if (stageTitle != null) {
-			this.stageTitle = stageTitle
-		}
-		const price = json.getString('price')
-		if (price != null) {
-			this.price = price
-		}
+		this.planOrderId = json.getString('id') ?? this.planOrderId
+		this.tagName = json.getString('tag_name') ?? this.tagName
+		this.title = json.getString('title') ?? this.title
+		this.price = json.getString('amount') ?? this.price
 		const orderNo = json.getString('order_no')
 		if (orderNo != null) {
 			this.orderNo = orderNo
@@ -47,7 +30,7 @@ export class PurchasedPlan {
 		if (paymentType != null) {
 			this.paymentType = paymentType
 		}
-		const unlockedAt = json.getString('unlocked_at')
+		const unlockedAt = json.getString('paid_at')
 		if (unlockedAt != null) {
 			this.unlockedAt = unlockedAt
 			const date = dayjs(unlockedAt)
@@ -57,13 +40,10 @@ export class PurchasedPlan {
 		if (validityText != null && validityText.length > 0) {
 			this.validityText = validityText
 		}
-		const status = json.getNumber('status')
-		if (status != null) {
-			this.status = status
-		}
+		this.status = json.getString('status') === 'PAID' ? 1 : 0
 	}
 
 	displayTitle (): string {
-		return this.stageTitle.length > 0 ? this.stageTitle : this.courseTitle
+		return this.title.length > 0 ? this.title : this.tagName + '专属康复方案'
 	}
 }

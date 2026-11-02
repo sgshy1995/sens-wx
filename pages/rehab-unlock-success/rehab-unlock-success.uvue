@@ -15,7 +15,7 @@
 			</view>
 			<text class="success-title">支付成功</text>
 			<text class="success-amount">¥{{ amountText }}</text>
-			<text class="success-subtitle">已解锁「{{ courseTitle }} · {{ stageTitle }}」</text>
+			<text class="success-subtitle">已购买「{{ courseTitle }}」</text>
 		</view>
 
 		<view class="result-content">
@@ -40,7 +40,7 @@
 					<text class="result-value">{{ orderNo.length > 0 ? orderNo : '生成中' }}</text>
 				</view>
 			</view>
-			<text class="result-note">方案已同步至康复页，如未解锁请联系客服</text>
+			<text class="result-note">方案已同步至“我的方案”，如有问题请联系客服</text>
 		</view>
 
 		<view class="footer">
@@ -63,8 +63,7 @@
 	const paymentTime = ref('')
 	const paymentTypeText = ref('余额支付')
 	const courseTitle = ref('康复方案')
-	const stageTitle = ref('')
-	const returnToFilter = ref(false)
+	const planOrderId = ref('')
 
 	onLoad((options) => {
 		const sys = uni.getSystemInfoSync()
@@ -91,13 +90,13 @@
 		if (courseTitleOption != null) {
 			courseTitle.value = decodeOption(courseTitleOption as string)
 		}
-		const stageTitleOption = options['stageTitle']
-		if (stageTitleOption != null) {
-			stageTitle.value = decodeOption(stageTitleOption as string)
+		const titleOption = options['title']
+		if (titleOption != null) {
+			courseTitle.value = decodeOption(titleOption as string)
 		}
-		const returnToFilterOption = options['returnToFilter']
-		if (returnToFilterOption != null) {
-			returnToFilter.value = decodeOption(returnToFilterOption as string) === '1'
+		const planOrderIdOption = options['planOrderId']
+		if (planOrderIdOption != null) {
+			planOrderId.value = decodeOption(planOrderIdOption as string)
 		}
 	})
 
@@ -140,27 +139,19 @@
 	}
 
 	function goBack (): void {
-		if (returnToFilter.value) {
-			uni.navigateBack({
-				delta: 1
-			})
-			return
-		}
 		uni.switchTab({
 			url: '/pages/rehab/rehab'
 		})
 	}
 
 	function goRehabPage (): void {
-		if (returnToFilter.value) {
-			uni.navigateBack({
-				delta: 1
+		if (planOrderId.value.length > 0) {
+			uni.navigateTo({
+				url: '/pages/rehab-plan/rehab-plan?planOrderId=' + encodeURIComponent(planOrderId.value)
 			})
 			return
 		}
-		uni.switchTab({
-			url: '/pages/rehab/rehab'
-		})
+		uni.navigateTo({ url: '/pages/my-plans/my-plans' })
 	}
 </script>
 

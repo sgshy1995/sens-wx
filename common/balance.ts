@@ -75,7 +75,12 @@ export class BalanceGroup {
 function resolveTitle (json: UTSJSONObject, isIncome: boolean): string {
 	const reason = json.getString('created_reason') ?? ''
 	if (!isIncome) {
-		if (reason.indexOf('解锁康复课程') >= 0 || reason.indexOf('微信支付') >= 0 || reason.indexOf('组合课程购买') >= 0) {
+		if (
+			reason.indexOf('解锁康复课程') >= 0 ||
+			reason.indexOf('组合课程购买') >= 0 ||
+			reason.indexOf('购买康复方案') >= 0 ||
+			reason.indexOf('微信支付') >= 0
+		) {
 			return '方案购买支付'
 		}
 		return reason.length > 0 ? reason : '余额消费'
@@ -99,13 +104,10 @@ function resolveIcon (json: UTSJSONObject, isIncome: boolean): string {
 	if (isIncome) {
 		return '/static/icons/ic-balance-recharge.svg'
 	}
-	if (reason.indexOf('解锁康复课程') >= 0) {
-		return '/static/icons/ic-balance-purchase.svg'
-	}
-	if (source === 'wechat' || reason.indexOf('微信支付') >= 0 || reason.indexOf('组合课程购买') >= 0) {
+	if (source === 'wechat' || reason.indexOf('微信支付') >= 0) {
 		return '/static/icons/ic-wechat-purchase.svg'
 	}
-	return ''
+	return '/static/icons/ic-balance-purchase.svg'
 }
 
 export function buildBalanceGroups (

@@ -30,7 +30,7 @@
 				<view v-else-if="plans.length === 0" class="empty-card">
 					<image class="empty-icon" src="/static/icons/ic-mine-scheme.svg" mode="aspectFit"></image>
 					<text class="empty-title">还没有已购方案</text>
-					<text class="empty-description">可以在康复页查看并解锁适合自己的组合课程</text>
+					<text class="empty-description">可以在康复页生成并购买专属康复方案</text>
 					<view class="empty-action" @click="goRehab">
 						<text class="empty-action-text">去康复页看看</text>
 					</view>
@@ -46,7 +46,7 @@
 						<view class="plan-copy">
 							<text class="plan-title">{{ plan.displayTitle() }}</text>
 							<text class="plan-meta">购买 {{ plan.purchaseDateText }} · {{ plan.validityText }}</text>
-							<text v-if="plan.courseTitle.length > 0 && plan.courseTitle !== plan.displayTitle()" class="plan-course">{{ plan.courseTitle }}</text>
+							<text v-if="plan.tagName.length > 0" class="plan-course">{{ plan.tagName }}</text>
 						</view>
 						<image class="chevron" src="/static/icons/ic-chevron.svg" mode="aspectFit"></image>
 					</button>
@@ -104,7 +104,7 @@
 		requesting.value = true
 		loading.value = plans.value.length === 0
 		loadFailed.value = false
-		get('/rehab_combination_course/unlocks', (res) => {
+		get('/rehab_plan/orders/mine', (res) => {
 			requesting.value = false
 			loading.value = false
 			if (res.getNumber('code', 0) !== 200) {
@@ -134,8 +134,7 @@
 
 	function openPlan (plan: PurchasedPlan): void {
 		uni.navigateTo({
-			url: '/pages/rehab-plan/rehab-plan?stageId=' + encodeURIComponent(plan.stageId)
-				+ '&courseTitle=' + encodeURIComponent(plan.courseTitle)
+			url: '/pages/rehab-plan/rehab-plan?planOrderId=' + encodeURIComponent(plan.planOrderId)
 		})
 	}
 

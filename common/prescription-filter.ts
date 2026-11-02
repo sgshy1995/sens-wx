@@ -5,22 +5,10 @@ export class PrescriptionFilterTag {
 	status: number = 1
 
 	initFromJSON (json: UTSJSONObject): void {
-		const id = json.getString("id")
-		if (id != null) {
-			this.id = id
-		}
-		const title = json.getString("title")
-		if (title != null) {
-			this.title = title
-		}
-		const priority = json.getNumber("priority")
-		if (priority != null) {
-			this.priority = priority
-		}
-		const status = json.getNumber("status")
-		if (status != null) {
-			this.status = status
-		}
+		this.id = json.getString("id") ?? this.id
+		this.title = json.getString("title") ?? this.title
+		this.priority = json.getNumber("priority") ?? this.priority
+		this.status = json.getNumber("status") ?? this.status
 	}
 }
 
@@ -37,30 +25,12 @@ export class PrescriptionFilterItem {
 	status: number = 1
 
 	initFromJSON (json: UTSJSONObject): void {
-		const id = json.getString("id")
-		if (id != null) {
-			this.id = id
-		}
-		const dictionaryId = json.getString("dictionary_id")
-		if (dictionaryId != null) {
-			this.dictionaryId = dictionaryId
-		}
-		const name = json.getString("name")
-		if (name != null) {
-			this.name = name
-		}
-		const value = json.getString("value")
-		if (value != null) {
-			this.value = value
-		}
-		const priority = json.getNumber("priority")
-		if (priority != null) {
-			this.priority = priority
-		}
-		const status = json.getNumber("status")
-		if (status != null) {
-			this.status = status
-		}
+		this.id = json.getString("id") ?? this.id
+		this.dictionaryId = json.getString("dictionary_id") ?? this.dictionaryId
+		this.name = json.getString("name") ?? this.name
+		this.value = json.getString("value") ?? this.value
+		this.priority = json.getNumber("priority") ?? this.priority
+		this.status = json.getNumber("status") ?? this.status
 	}
 }
 
@@ -69,50 +39,21 @@ export class PrescriptionFilterDictionary {
 	prescriptionTagId: string = ""
 	code: string = ""
 	name: string = ""
+	filterMode: string = "decrease"
+	dataWeight: number = 0
 	priority: number = 0
 	status: number = 1
-	isStageDictionary: boolean = false
-	isNormalDictionary: boolean = false
-	isStageOnly: boolean = false
 	items: PrescriptionFilterItem[] = []
 
 	initFromJSON (json: UTSJSONObject): void {
-		const id = json.getString("id")
-		if (id != null) {
-			this.id = id
-		}
-		const prescriptionTagId = json.getString("prescription_tag_id")
-		if (prescriptionTagId != null) {
-			this.prescriptionTagId = prescriptionTagId
-		}
-		const code = json.getString("code")
-		if (code != null) {
-			this.code = code
-		}
-		const name = json.getString("name")
-		if (name != null) {
-			this.name = name
-		}
-		const priority = json.getNumber("priority")
-		if (priority != null) {
-			this.priority = priority
-		}
-		const status = json.getNumber("status")
-		if (status != null) {
-			this.status = status
-		}
-		const isStageDictionary = json.getBoolean("is_stage_dictionary")
-		if (isStageDictionary != null) {
-			this.isStageDictionary = isStageDictionary
-		}
-		const isNormalDictionary = json.getBoolean("is_normal_dictionary")
-		if (isNormalDictionary != null) {
-			this.isNormalDictionary = isNormalDictionary
-		}
-		const isStageOnly = json.getBoolean("is_stage_only")
-		if (isStageOnly != null) {
-			this.isStageOnly = isStageOnly
-		}
+		this.id = json.getString("id") ?? this.id
+		this.prescriptionTagId = json.getString("prescription_tag_id") ?? this.prescriptionTagId
+		this.code = json.getString("code") ?? this.code
+		this.name = json.getString("name") ?? this.name
+		this.filterMode = json.getString("filter_mode") ?? this.filterMode
+		this.dataWeight = json.getNumber("data_weight") ?? this.dataWeight
+		this.priority = json.getNumber("priority") ?? this.priority
+		this.status = json.getNumber("status") ?? this.status
 		const itemList = json.getArray<UTSJSONObject>("items")
 		if (itemList != null) {
 			const parsed: PrescriptionFilterItem[] = []
@@ -126,68 +67,61 @@ export class PrescriptionFilterDictionary {
 	}
 }
 
-export class PrescriptionFilterResult {
-	courseId: string = ""
-	courseTitle: string = ""
-	courseRemark: string = ""
-	stageCount: number = 0
-	stageId: string = ""
-	stageTitle: string = ""
-	stageRemark: string = ""
-	tagName: string = ""
-	dictionaryNames: string[] = []
-	price: string = "0"
-	originalPrice: string = "0"
-	unlocked: boolean = false
+export class PrescriptionFilterCondition {
+	dictionaryId: string = ""
+	dictionaryItemId: string = ""
+	dictionaryName: string = ""
+	itemName: string = ""
+	filterMode: string = ""
+	dataWeight: number = 0
+	itemPriority: number = 0
 
 	initFromJSON (json: UTSJSONObject): void {
-		const courseId = json.getString("course_id")
-		if (courseId != null) {
-			this.courseId = courseId
-		}
-		const courseTitle = json.getString("course_title")
-		if (courseTitle != null) {
-			this.courseTitle = courseTitle
-		}
-		const courseRemark = json.getString("course_remark")
-		if (courseRemark != null) {
-			this.courseRemark = courseRemark
-		}
-		const stageCount = json.getNumber("stage_count")
-		if (stageCount != null) {
-			this.stageCount = stageCount
-		}
-		const stageId = json.getString("stage_id")
-		if (stageId != null) {
-			this.stageId = stageId
-		}
-		const stageTitle = json.getString("stage_title")
-		if (stageTitle != null) {
-			this.stageTitle = stageTitle
-		}
-		const stageRemark = json.getString("stage_remark")
-		if (stageRemark != null) {
-			this.stageRemark = stageRemark
-		}
-		const tagName = json.getString("tag_name")
-		if (tagName != null) {
-			this.tagName = tagName
-		}
-		const dictionaryNames = json.getArray<string>("dictionary_names")
-		if (dictionaryNames != null) {
-			this.dictionaryNames = dictionaryNames
-		}
-		const price = json.getString("price")
-		if (price != null) {
-			this.price = price
-		}
-		const originalPrice = json.getString("original_price")
-		if (originalPrice != null) {
-			this.originalPrice = originalPrice
-		}
-		const unlocked = json.getBoolean("unlocked")
-		if (unlocked != null) {
-			this.unlocked = unlocked
+		this.dictionaryId = json.getString("dictionary_id") ?? this.dictionaryId
+		this.dictionaryItemId = json.getString("dictionary_item_id") ?? this.dictionaryItemId
+		this.dictionaryName = json.getString("dictionary_name") ?? this.dictionaryName
+		this.itemName = json.getString("item_name") ?? this.itemName
+		this.filterMode = json.getString("filter_mode") ?? this.filterMode
+		this.dataWeight = json.getNumber("data_weight") ?? this.dataWeight
+		this.itemPriority = json.getNumber("item_priority") ?? this.itemPriority
+	}
+}
+
+export class PrescriptionPlanPreview {
+	prescriptionTagId: string = ""
+	tagName: string = ""
+	planSignature: string = ""
+	videoCount: number = 0
+	imageCount: number = 0
+	textCount: number = 0
+	totalCount: number = 0
+	price: string = ""
+	originalPrice: string = ""
+	isDiscount: boolean = false
+	payable: boolean = false
+	conditions: PrescriptionFilterCondition[] = []
+
+	initFromJSON (json: UTSJSONObject): void {
+		this.prescriptionTagId = json.getString("prescription_tag_id") ?? this.prescriptionTagId
+		this.tagName = json.getString("tag_name") ?? this.tagName
+		this.planSignature = json.getString("plan_signature") ?? this.planSignature
+		this.videoCount = json.getNumber("video_count") ?? this.videoCount
+		this.imageCount = json.getNumber("image_count") ?? this.imageCount
+		this.textCount = json.getNumber("text_count") ?? this.textCount
+		this.totalCount = json.getNumber("total_count") ?? this.totalCount
+		this.price = json.getString("price") ?? this.price
+		this.originalPrice = json.getString("original_price") ?? this.originalPrice
+		this.isDiscount = json.getBoolean("is_discount") ?? this.isDiscount
+		this.payable = json.getBoolean("payable") ?? this.payable
+		const list = json.getArray<UTSJSONObject>("conditions")
+		if (list != null) {
+			const parsed: PrescriptionFilterCondition[] = []
+			for (let i = 0; i < list.length; i++) {
+				const condition = new PrescriptionFilterCondition()
+				condition.initFromJSON(list[i])
+				parsed.push(condition)
+			}
+			this.conditions = parsed
 		}
 	}
 }

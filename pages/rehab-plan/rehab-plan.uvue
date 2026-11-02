@@ -7,13 +7,13 @@
 						<view class="back-button" @click="goBack">
 							<text class="back-glyph">‹</text>
 						</view>
-						<text class="nav-title">康复方案</text>
+						<text class="nav-title">专属康复方案</text>
 						<view class="nav-placeholder"></view>
 					</view>
 				</view>
 				<view class="hero-copy">
-					<text class="hero-title">{{ planTitle }}</text>
-					<text class="hero-subtitle">{{ heroSubtitle() }}</text>
+					<text class="hero-title">专属康复方案</text>
+					<text class="hero-subtitle">完整训练内容与动作指导</text>
 				</view>
 			</view>
 
@@ -23,7 +23,6 @@
 				<template v-else>
 					<view class="section-head">
 						<text class="section-title">方案概览</text>
-						<text v-if="planTag.length > 0" class="section-note">{{ planTag }}</text>
 					</view>
 					<view class="overview-card">
 						<view class="overview-stats">
@@ -42,17 +41,14 @@
 						</view>
 					</view>
 
-					<view v-if="hasFirstVideo" class="section-head">
-						<text class="section-title">重点跟练</text>
-						<text class="section-note">视频</text>
+					<view class="section-head">
+						<text class="section-title">已选标签</text>
+						<text class="section-note">{{ selectedLabels.length }} 项</text>
 					</view>
-					<view v-if="hasFirstVideo" class="feature-card" @click="playFirstVideo">
-						<image class="feature-cover" :src="firstVideoCover" mode="aspectFill"></image>
-						<view class="feature-mask"></view>
-						<view class="feature-play"><view class="feature-play-triangle"></view></view>
-						<view class="feature-copy">
-							<text class="feature-title">{{ firstVideoTitle }}</text>
-							<text v-if="firstVideoRemark.length > 0" class="feature-subtitle">{{ firstVideoRemark }}</text>
+					<view class="selected-labels-card">
+						<view v-for="(label, index) in selectedLabels" :key="label + index" class="selected-label-chip">
+							<view class="selected-label-dot"></view>
+							<text class="selected-label-text">{{ label }}</text>
 						</view>
 					</view>
 
@@ -60,7 +56,7 @@
 						<text class="section-title">训练内容安排</text>
 						<text class="section-note">{{ totalCount }} 项内容</text>
 					</view>
-					<view v-if="totalCount === 0" class="state-card"><text class="state-text">该阶段暂未配置内容</text></view>
+					<view v-if="totalCount === 0" class="state-card"><text class="state-text">该方案暂未配置内容</text></view>
 					<view v-for="(section, index) in sections" :key="section.id + '-' + index" class="module-card">
 						<view class="module-head">
 							<view class="module-head-left">
@@ -91,11 +87,8 @@
 		</scroll-view>
 
 		<view class="footer">
-			<view class="contact-button" :class="{ 'contact-button-narrow': hasNextStage }" @click="onContactCoachTap">
+			<view class="contact-button" @click="onContactCoachTap">
 				<text class="contact-text">联系康复师</text>
-			</view>
-			<view v-if="hasNextStage" class="start-button" @click="onStartNextStage">
-				<text class="start-text">开始下阶段训练</text>
 			</view>
 		</view>
 
@@ -145,11 +138,8 @@
 
 	const statusBarHeight = ref(24)
 	const topPadding = ref(32)
-	const stageId = ref('')
-	const courseId = ref('')
-	const courseTitle = ref('')
-	const planTitle = ref('康复方案')
-	const planTag = ref('')
+	const planOrderId = ref('')
+	const selectedLabels = ref<string[]>([])
 	const planRemark = ref('')
 	const sections = ref<RehabPlanSection[]>([])
 	const loading = ref(true)
@@ -158,13 +148,6 @@
 	const totalCount = ref(0)
 	const videoCount = ref(0)
 	const mediaCount = ref(0)
-	const hasFirstVideo = ref(false)
-	const firstVideoTitle = ref('')
-	const firstVideoCover = ref('')
-	const firstVideoRemark = ref('')
-	const hasNextStage = ref(false)
-	const nextStageId = ref('')
-	const checkingNextStage = ref(false)
 	const previewVisible = ref(false)
 	const previewItems = ref<RehabMediaItem[]>([])
 	const previewIndex = ref(0)
@@ -178,13 +161,9 @@
 		const sys = uni.getSystemInfoSync()
 		statusBarHeight.value = sys.statusBarHeight
 		topPadding.value = sys.statusBarHeight + 8
-		const stageIdOption = options['stageId']
-		if (stageIdOption != null) {
-			stageId.value = stageIdOption as string
-		}
-		const titleOption = options['courseTitle']
-		if (titleOption != null) {
-			courseTitle.value = decodeOption(titleOption as string)
+		const planOrderIdOption = options['planOrderId']
+		if (planOrderIdOption != null) {
+			planOrderId.value = planOrderIdOption as string
 		}
 		loadPlan()
 	})
@@ -198,13 +177,13 @@
 	}
 
 	function loadPlan (): void {
-		if (stageId.value.length === 0) {
+		if (planOrderId.value.length === 0) {
 			loading.value = false
 			loadFailed.value = true
 			failMessage.value = '缺少方案参数'
 			return
 		}
-		const url = '/rehab_combination_course_stage/id/' + encodeURIComponent(stageId.value)
+		const url = '/rehab_plan/orders/' + encodeURIComponent(planOrderId.value) + '/content'
 		get(url, (res) => {
 			loading.value = false
 			if (res.getNumber('code', 0) !== 200) {
@@ -229,82 +208,25 @@
 	}
 
 	function applyDetail (detail: RehabPlanDetail): void {
-		planTitle.value = detail.title.length > 0 ? detail.title : '康复方案'
-		planTag.value = detail.dictionaryItemName
 		planRemark.value = detail.remark
-		courseId.value = detail.courseId
+		const labels: string[] = []
+		if (detail.dictionaryItemName.length > 0) {
+			labels.push(detail.dictionaryItemName)
+		}
+		for (let i = 0; i < detail.conditions.length; i++) {
+			const condition = detail.conditions[i]
+			if (condition.itemName.length > 0) {
+				labels.push(condition.dictionaryName.length > 0
+					? condition.dictionaryName + '：' + condition.itemName
+					: condition.itemName)
+			}
+		}
+		selectedLabels.value = labels
 		sections.value = detail.sections
 		totalCount.value = detail.sections.length
 		videoCount.value = detail.videoCount()
 		mediaCount.value = detail.mediaCount()
 		buildPreviewItems(detail)
-		const video = detail.firstVideo()
-		if (video != null) {
-			hasFirstVideo.value = true
-			firstVideoTitle.value = video.resourceTitle.length > 0 ? video.resourceTitle : '重点跟练'
-			firstVideoCover.value = video.resourceCover.length > 0 ? resolveFileUrl(video.resourceCover) : ''
-			firstVideoRemark.value = video.extraTextValue()
-		}
-		loadNextStage(detail.courseId, detail.sort)
-	}
-
-	function loadNextStage (courseIdValue: string, currentSort: number): void {
-		if (courseIdValue.length === 0) {
-			return
-		}
-		const url = '/rehab_combination_course/id/' + encodeURIComponent(courseIdValue)
-		get(url, (res) => {
-			if (res.getNumber('code', 0) !== 200) {
-				return
-			}
-			const data = res.getJSON('data')
-			if (data == null) {
-				return
-			}
-			const stages = data.getArray<UTSJSONObject>('stages')
-			if (stages == null) {
-				return
-			}
-			let matchedId = ''
-			let matchedSort = -1
-			for (let i = 0; i < stages.length; i++) {
-				const item = stages[i]
-				const sort = item.getNumber('sort') ?? -1
-				const status = item.getNumber('status') ?? 1
-				if (status === 1 && sort > currentSort) {
-					if (matchedSort < 0 || sort < matchedSort) {
-						matchedSort = sort
-						matchedId = item.getString('id') ?? ''
-					}
-				}
-			}
-			if (matchedId.length > 0) {
-				hasNextStage.value = true
-				nextStageId.value = matchedId
-			}
-		}, (msg) => {
-		})
-	}
-
-	function heroSubtitle (): string {
-		const parts: string[] = []
-		if (courseTitle.value.length > 0) {
-			parts.push(courseTitle.value)
-		}
-		if (planTag.value.length > 0) {
-			parts.push(planTag.value)
-		}
-		if (parts.length === 0) {
-			return '完整康复方案'
-		}
-		let text = ''
-		for (let i = 0; i < parts.length; i++) {
-			if (i > 0) {
-				text += ' · '
-			}
-			text += parts[i]
-		}
-		return text
 	}
 
 	function formatIndex (index: number): string {
@@ -414,75 +336,18 @@
 		return (previewIndex.value + 1).toString() + ' / ' + previewItems.value.length.toString()
 	}
 
-	function playFirstVideo (): void {
-		for (let i = 0; i < previewItems.value.length; i++) {
-			if (previewItems.value[i].type === 'video') {
-				openPreviewAt(i)
-				return
-			}
-		}
-	}
-
 	function onSectionTap (section: RehabPlanSection): void {
 		openPreviewAt(findPreviewIndex(section))
 	}
 
 	function onContactCoachTap (): void {
 		let url = '/pages/support-chat/support-chat'
-		if (stageId.value.length > 0) {
-			url += '?courseId=' + encodeURIComponent(courseId.value)
-				+ '&stageId=' + encodeURIComponent(stageId.value)
-				+ '&courseTitle=' + encodeURIComponent(courseTitle.value)
+		if (planOrderId.value.length > 0) {
+			url += '?planOrderId=' + encodeURIComponent(planOrderId.value)
 		}
 		uni.navigateTo({
 			url
 		})
-	}
-
-	function onStartNextStage (): void {
-		if (checkingNextStage.value || nextStageId.value.length === 0 || courseId.value.length === 0) {
-			return
-		}
-		checkingNextStage.value = true
-		uni.showLoading({
-			title: '加载中',
-			mask: true
-		})
-		const url = '/rehab_combination_course/unlock/info?course_id=' + encodeURIComponent(courseId.value)
-			+ '&stage_id=' + encodeURIComponent(nextStageId.value)
-		get(url, (res) => {
-			finishNextStageCheck()
-			if (res.getNumber('code', 0) !== 200) {
-				uni.showToast({
-					title: res.getString('message') ?? '加载失败',
-					icon: 'none'
-				})
-				return
-			}
-			const data = res.getJSON('data')
-			if (data != null && data.getBoolean('unlocked') === true) {
-				uni.navigateTo({
-					url: '/pages/rehab-plan/rehab-plan?stageId=' + encodeURIComponent(nextStageId.value)
-						+ '&courseTitle=' + encodeURIComponent(courseTitle.value)
-				})
-				return
-			}
-			uni.navigateTo({
-				url: '/pages/rehab-unlock/rehab-unlock?courseId=' + encodeURIComponent(courseId.value)
-					+ '&stageId=' + encodeURIComponent(nextStageId.value)
-			})
-		}, (msg) => {
-			finishNextStageCheck()
-			uni.showToast({
-				title: msg,
-				icon: 'none'
-			})
-		})
-	}
-
-	function finishNextStageCheck (): void {
-		checkingNextStage.value = false
-		uni.hideLoading()
 	}
 
 	function goBack (): void {
@@ -643,72 +508,45 @@
 		color: #9CA3AF;
 	}
 
-	.feature-card {
-		position: relative;
-		width: 100%;
-		height: 150px;
-		border-radius: 16px;
-		overflow: hidden;
-	}
-
-	.feature-cover {
-		width: 100%;
-		height: 150px;
-	}
-
-	.feature-mask {
-		position: absolute;
-		left: 0;
-		right: 0;
-		top: 0;
-		bottom: 0;
-		background-image: linear-gradient(180deg, rgba(0, 0, 0, 0) 40%, rgba(0, 0, 0, 0.55) 100%);
-	}
-
-	.feature-play {
-		position: absolute;
-		left: 50%;
-		top: 50%;
-		width: 44px;
-		height: 44px;
-		margin-left: -22px;
-		margin-top: -22px;
+	.selected-labels-card {
 		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		gap: 8px;
+		padding: 14px;
+		border: 1px solid #EDEFF2;
+		border-radius: 14px;
+		background: #FFFFFF;
+		box-sizing: border-box;
+	}
+
+	.selected-label-chip {
+		display: flex;
+		max-width: 100%;
+		flex-direction: row;
 		align-items: center;
-		justify-content: center;
-		border-radius: 22px;
-		background: rgba(255, 255, 255, 0.95);
-		box-shadow: 0 4px 10px rgba(0, 0, 0, 0.18);
+		gap: 6px;
+		padding: 6px 9px;
+		border: 1px solid #FFE3D5;
+		border-radius: 9px;
+		background: #FFF8F4;
+		box-sizing: border-box;
 	}
 
-	.feature-play-triangle {
-		width: 0;
-		height: 0;
-		margin-left: 3px;
-		border-top: 7px solid transparent;
-		border-bottom: 7px solid transparent;
-		border-left: 12px solid #FF6B35;
+	.selected-label-dot {
+		width: 5px;
+		height: 5px;
+		flex: 0 0 5px;
+		border-radius: 3px;
+		background: #FF6B35;
 	}
 
-	.feature-copy {
-		position: absolute;
-		left: 16px;
-		right: 16px;
-		bottom: 14px;
-		display: flex;
-		flex-direction: column;
-		gap: 3px;
-	}
-
-	.feature-title {
-		font-size: 15px;
-		font-weight: 600;
-		color: #FFFFFF;
-	}
-
-	.feature-subtitle {
+	.selected-label-text {
+		min-width: 0;
 		font-size: 11px;
-		color: rgba(255, 255, 255, 0.85);
+		line-height: 16px;
+		color: #5B4B43;
+		word-break: break-all;
 	}
 
 	.module-card {

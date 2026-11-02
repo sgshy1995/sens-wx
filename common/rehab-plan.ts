@@ -36,7 +36,10 @@ export class RehabPlanSection {
 			this.resourceCover = resourceCover
 		}
 		const resourceRemark = json.getString("resource_remark")
-		if (resourceRemark != null) {
+		const description = json.getString("description")
+		if (description != null) {
+			this.resourceRemark = description
+		} else if (resourceRemark != null) {
 			this.resourceRemark = resourceRemark
 		}
 		const extraType = json.getNumber("extra_type")
@@ -78,13 +81,23 @@ export class RehabPlanSection {
 		if (this.extraType === 2) {
 			return this.extraText
 		}
-		return ""
+		return this.resourceRemark
+	}
+}
+
+export class RehabPlanCondition {
+	dictionaryName: string = ""
+	itemName: string = ""
+
+	initFromJSON (json: UTSJSONObject): void {
+		this.dictionaryName = json.getString("dictionary_name") ?? this.dictionaryName
+		this.itemName = json.getString("item_name") ?? this.itemName
 	}
 }
 
 export class RehabPlanDetail {
 	id: string = ""
-	courseId: string = ""
+	planOrderId: string = ""
 	title: string = ""
 	remark: string = ""
 	price: string = "0"
@@ -92,19 +105,21 @@ export class RehabPlanDetail {
 	dictionaryItemName: string = ""
 	sort: number = 0
 	sections: RehabPlanSection[] = []
+	conditions: RehabPlanCondition[] = []
 
 	initFromJSON (json: UTSJSONObject): void {
 		const id = json.getString("id")
 		if (id != null) {
 			this.id = id
 		}
-		const courseId = json.getString("course_id")
-		if (courseId != null) {
-			this.courseId = courseId
-		}
+		this.planOrderId = json.getString("id") ?? this.planOrderId
 		const title = json.getString("title")
 		if (title != null) {
 			this.title = title
+		}
+		const tagName = json.getString("tag_name")
+		if (tagName != null) {
+			this.dictionaryItemName = tagName
 		}
 		const remark = json.getString("remark")
 		if (remark != null) {
@@ -126,7 +141,8 @@ export class RehabPlanDetail {
 		if (sort != null) {
 			this.sort = sort
 		}
-		const list = json.getArray<UTSJSONObject>("sections")
+		const list = json.getArray<UTSJSONObject>("items")
+			?? json.getArray<UTSJSONObject>("sections")
 		if (list != null) {
 			const parsed: RehabPlanSection[] = []
 			for (let i = 0; i < list.length; i++) {
@@ -135,6 +151,16 @@ export class RehabPlanDetail {
 				parsed.push(section)
 			}
 			this.sections = parsed
+		}
+		const conditionsJson = json.getArray<UTSJSONObject>("conditions")
+		if (conditionsJson != null) {
+			const parsedConditions: RehabPlanCondition[] = []
+			for (let i = 0; i < conditionsJson.length; i++) {
+				const condition = new RehabPlanCondition()
+				condition.initFromJSON(conditionsJson[i])
+				parsedConditions.push(condition)
+			}
+			this.conditions = parsedConditions
 		}
 	}
 

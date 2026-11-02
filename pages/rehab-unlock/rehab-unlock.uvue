@@ -1,33 +1,57 @@
 <template>
 	<view class="page">
-		<view class="hero">
-			<view class="safe-nav" :style="{ paddingTop: statusBarHeight + 'px' }">
-				<view class="nav-row">
-					<view class="back-button" @click="goBack">
-						<text class="back-glyph">‹</text>
-					</view>
-					<text class="nav-title">订单确认</text>
-					<view class="nav-placeholder"></view>
-				</view>
-			</view>
-
-			<view class="product-summary">
-				<text class="product-title">{{ courseTitle }}</text>
-				<text class="product-description">{{ stageTitle }} · 完整阶段安排 · 动作图文详解 · 视频跟练</text>
-				<view class="price-row">
-					<text class="price-current">¥{{ priceText() }}</text>
-					<text v-if="showOriginalPrice()" class="price-original">¥{{ originalPriceText() }}</text>
-				</view>
+		<view class="nav-shell" :style="{ paddingTop: statusBarHeight + 'px' }">
+			<view class="nav-row">
+				<view class="back-button" @click="goBack"><text class="back-glyph">‹</text></view>
+				<text class="nav-title">支付确认</text>
+				<view class="nav-placeholder"></view>
 			</view>
 		</view>
 
-		<view class="content">
-			<view class="payment-card">
-				<text class="card-title">选择支付方式</text>
-				<view class="payment-row" @click="selectPayment(0)">
+		<scroll-view class="content-scroll" scroll-y>
+			<view class="content">
+				<view class="summary-card">
+					<view class="summary-main">
+						<view class="summary-icon-wrap">
+							<image class="summary-icon" src="/static/icons/ic-mine-scheme.svg" mode="aspectFit"></image>
+						</view>
+						<view class="summary-copy">
+							<view class="summary-tags">
+								<view v-for="(label, index) in firstFourLabels()" :key="label + index" class="summary-tag">
+									<text class="summary-tag-text">{{ label }}</text>
+								</view>
+								<view v-if="hasMoreLabels()" class="summary-tag summary-tag-more">
+									<text class="summary-tag-more-text">等描述</text>
+								</view>
+							</view>
+							<text class="product-title">专属康复方案 购买</text>
+							<text class="product-description">{{ resourceSummary }}</text>
+						</view>
+					</view>
+					<view class="summary-divider"></view>
+					<view class="price-line">
+						<text class="price-label">方案价格</text>
+						<view class="price-copy">
+							<text class="price-current">¥{{ priceText() }}</text>
+							<text v-if="showOriginalPrice()" class="price-original">¥{{ originalPriceText() }}</text>
+						</view>
+					</view>
+				</view>
+
+				<view class="payment-card">
+					<view class="card-head">
+						<view class="card-title-wrap">
+							<view class="card-title-icon"><image class="card-title-image" src="/static/icons/ic-order.svg" mode="aspectFit"></image></view>
+							<text class="card-title">选择支付方式</text>
+						</view>
+					</view>
+					<view class="payment-row" :class="{ 'payment-row-active': paymentType === 0 }" @click="selectPayment(0)">
 					<image class="payment-icon" src="/static/icons/ic-balance-pay.svg" mode="aspectFit"></image>
 					<view class="payment-copy">
-						<text class="payment-name">余额支付</text>
+						<view class="payment-name-row">
+							<text class="payment-name">余额支付</text>
+							<view class="recommend-badge"><text class="recommend-text">推荐</text></view>
+						</view>
 						<text class="payment-desc">可用余额 ¥{{ balanceText() }}</text>
 					</view>
 					<view class="radio" :class="{ 'radio-active': paymentType === 0 }">
@@ -35,7 +59,7 @@
 					</view>
 				</view>
 				<view class="divider"></view>
-				<view class="payment-row" @click="selectPayment(1)">
+				<view class="payment-row" :class="{ 'payment-row-active': paymentType === 1 }" @click="selectPayment(1)">
 					<image class="payment-icon" src="/static/icons/ic-wechat-pay.svg" mode="aspectFit"></image>
 					<view class="payment-copy">
 						<text class="payment-name">微信支付</text>
@@ -45,16 +69,18 @@
 						<view v-if="paymentType === 1" class="radio-dot"></view>
 					</view>
 				</view>
+				</view>
+
 			</view>
-			<text class="agreement-tip">支付即同意《康复方案解锁服务协议》，解锁后永久有效</text>
-		</view>
+		</scroll-view>
 
 		<view class="footer">
 			<view class="total-group">
-				<text class="total-label">合计</text>
-				<text class="total-amount">¥{{ priceText() }}</text>
+				<text class="total-label">应付金额</text>
+				<view class="total-price-row"><text class="total-symbol">¥</text><text class="total-amount">{{ priceText() }}</text></view>
 			</view>
 			<button class="pay-button" :disabled="paying || loading" hover-class="none" @click="handlePay">
+				<image v-if="!paying && !loading" class="pay-icon" src="/static/icons/ic-success.svg" mode="aspectFit"></image>
 				<text class="pay-button-text">{{ paying ? '请稍后...' : '立即支付' }}</text>
 			</button>
 		</view>
@@ -63,20 +89,25 @@
 
 <script setup lang="uts">
 	import { formatMoney } from '../../common/money'
+	import { PrescriptionPlanPreview } from '../../common/prescription-filter'
 	import { get, post } from '../../common/request'
+	import { fetchCurrentUserInfo } from '../../common/auth.uts'
 
 	const statusBarHeight = ref(24)
-	const courseId = ref('')
-	const stageId = ref('')
-	const courseTitle = ref('康复方案')
-	const stageTitle = ref('')
+	const prescriptionTagId = ref('')
+	const dictionaryItemIds = ref('')
+	const expectedSignature = ref('')
+	const sourceType = ref('manual')
+	const agreementVersion = ref('v1')
+	const tagName = ref('康复方案')
+	const resourceSummary = ref('')
+	const selectedLabels = ref<string[]>([])
 	const price = ref('0')
 	const originalPrice = ref('0')
 	const balance = ref('0')
 	const paymentType = ref(0)
 	const loading = ref(true)
 	const paying = ref(false)
-	const returnToFilter = ref(false)
 	let paymentPollTimer = -1
 	let paymentPollCount = 0
 	let activeOutTradeNo = ''
@@ -84,82 +115,103 @@
 	onLoad((options) => {
 		const sys = uni.getSystemInfoSync()
 		statusBarHeight.value = sys.statusBarHeight
-		const courseIdOption = options['courseId']
-		if (courseIdOption != null) {
-			courseId.value = courseIdOption as string
-		}
-		const stageIdOption = options['stageId']
-		if (stageIdOption != null) {
-			stageId.value = stageIdOption as string
-		}
-		const returnToFilterOption = options['returnToFilter']
-		if (returnToFilterOption != null) {
-			returnToFilter.value = (returnToFilterOption as string) === '1'
-		}
-		loadUnlockInfo()
+		prescriptionTagId.value = decodeOption(options['prescriptionTagId'] ?? '')
+		dictionaryItemIds.value = decodeOption(options['dictionaryItemIds'] ?? '')
+		expectedSignature.value = decodeOption(options['expectedSignature'] ?? '')
+		sourceType.value = decodeOption(options['sourceType'] ?? 'manual')
+		agreementVersion.value = decodeOption(options['agreementVersion'] ?? 'v1')
+		loadPreview()
+		loadBalance()
 	})
 
-	onUnload(() => {
-		stopPaymentPolling()
-	})
+	onUnload(() => stopPaymentPolling())
 
-	function loadUnlockInfo (): void {
-		if (courseId.value.length === 0 || stageId.value.length === 0) {
-			uni.showToast({ title: '缺少课程参数', icon: 'none' })
-			return
+	function decodeOption (value: string): string {
+		try { return decodeURIComponent(value) } catch (error) { return value }
+	}
+
+	function buildSelectionBody (): UTSJSONObject {
+		const body = new UTSJSONObject()
+		body.set('prescription_tag_id', prescriptionTagId.value)
+		const ids = dictionaryItemIds.value.length > 0 ? dictionaryItemIds.value.split(',') : []
+		const selectedItems: UTSJSONObject[] = []
+		for (let i = 0; i < ids.length; i++) {
+			const item = new UTSJSONObject()
+			item.set('dictionary_item_id', ids[i])
+			selectedItems.push(item)
 		}
-		const url = '/rehab_combination_course/unlock/info?course_id=' + encodeURIComponent(courseId.value)
-			+ '&stage_id=' + encodeURIComponent(stageId.value)
-		get(url, (res) => {
+		body.set('dictionary_items', selectedItems)
+		return body
+	}
+
+	function loadPreview (): void {
+		post('/rehab_plan/preview', buildSelectionBody(), (res) => {
 			loading.value = false
 			if (res.getNumber('code', 0) !== 200) {
-				uni.showToast({ title: res.getString('message') ?? '加载失败', icon: 'none' })
+				uni.showToast({ title: res.getString('message') ?? '方案加载失败', icon: 'none' })
 				return
 			}
 			const data = res.getJSON('data')
-			if (data == null) {
-				return
+			if (data == null) return
+			const preview = new PrescriptionPlanPreview()
+			preview.initFromJSON(data)
+			tagName.value = preview.tagName
+			expectedSignature.value = preview.planSignature
+			price.value = preview.price
+			originalPrice.value = preview.originalPrice
+			resourceSummary.value = preview.videoCount.toString() + ' 视频 · ' + preview.imageCount.toString() + ' 图片 · ' + preview.textCount.toString() + ' 文字'
+			const labels: string[] = [preview.tagName]
+			for (let i = 0; i < preview.conditions.length; i++) {
+				const itemName = preview.conditions[i].itemName
+				if (itemName.length > 0 && !labels.includes(itemName)) {
+					labels.push(itemName)
+				}
 			}
-			courseTitle.value = data.getString('course_title') ?? courseTitle.value
-			stageTitle.value = data.getString('stage_title') ?? ''
-			price.value = data.getString('price') ?? '0'
-			originalPrice.value = data.getString('original_price') ?? '0'
-			balance.value = data.getString('balance') ?? '0'
-			if (data.getBoolean('unlocked') === true) {
-				uni.showToast({ title: '该阶段已解锁', icon: 'none' })
-			}
-		}, (msg) => {
+			selectedLabels.value = labels
+		}, (message) => {
 			loading.value = false
-			uni.showToast({ title: msg, icon: 'none' })
+			uni.showToast({ title: message, icon: 'none' })
 		})
 	}
 
+	function loadBalance (): void {
+		fetchCurrentUserInfo((userInfo) => {
+			balance.value = userInfo.getString('balance') ?? '0'
+		}, () => {})
+	}
+
 	function selectPayment (type: number): void {
-		if (!paying.value) {
-			paymentType.value = type
+		if (!paying.value) paymentType.value = type
+	}
+
+	function firstFourLabels (): string[] {
+		const result: string[] = []
+		for (let i = 0; i < selectedLabels.value.length && i < 4; i++) {
+			result.push(selectedLabels.value[i])
 		}
+		return result
 	}
 
-	function priceText (): string {
-		return formatMoney(price.value, 2)
+	function hasMoreLabels (): boolean {
+		return selectedLabels.value.length > 4
 	}
 
-	function originalPriceText (): string {
-		return formatMoney(originalPrice.value, 2)
-	}
+	function priceText (): string { return formatMoney(price.value, 2) }
+	function originalPriceText (): string { return formatMoney(originalPrice.value, 2) }
+	function balanceText (): string { return formatMoney(balance.value, 2) }
+	function showOriginalPrice (): boolean { return Number(originalPrice.value) > Number(price.value) }
 
-	function balanceText (): string {
-		return formatMoney(balance.value, 2)
-	}
-
-	function showOriginalPrice (): boolean {
-		return Number(originalPrice.value) > Number(price.value)
+	function paymentBody (): UTSJSONObject {
+		const body = buildSelectionBody()
+		body.set('expected_plan_signature', expectedSignature.value)
+		body.set('agreement_accepted', true)
+		body.set('agreement_version', agreementVersion.value)
+		body.set('source_type', sourceType.value)
+		return body
 	}
 
 	function handlePay (): void {
-		if (paying.value || loading.value) {
-			return
-		}
+		if (paying.value || loading.value) return
 		if (paymentType.value === 0 && Number(balance.value) < Number(price.value)) {
 			uni.showToast({ title: '余额不足，请先充值或选择微信支付', icon: 'none' })
 			return
@@ -174,25 +226,17 @@
 	function payWithBalance (): void {
 		paying.value = true
 		uni.showLoading({ title: '请稍后', mask: true })
-		const body = new UTSJSONObject()
-		body.set('course_id', courseId.value)
-		body.set('stage_id', stageId.value)
-		body.set('payment_type', 0)
-		post('/rehab_combination_course/unlock', body, (res) => {
+		post('/rehab_plan/orders/balance', paymentBody(), (res) => {
 			finishPay()
 			if (res.getNumber('code', 0) !== 200) {
 				uni.showToast({ title: res.getString('message') ?? '支付失败', icon: 'none' })
 				return
 			}
 			const data = res.getJSON('data')
-			if (data == null) {
-				uni.showToast({ title: '支付结果异常', icon: 'none' })
-				return
-			}
-			showUnlockSuccess(data, price.value, '余额支付')
-		}, (msg) => {
+			if (data != null) showPlanSuccess(data, '余额支付')
+		}, (message) => {
 			finishPay()
-			uni.showToast({ title: msg, icon: 'none' })
+			uni.showToast({ title: message, icon: 'none' })
 		})
 	}
 
@@ -202,54 +246,46 @@
 		uni.login({
 			provider: 'weixin',
 			success: (loginRes) => {
-				const loginCode = loginRes.code
-				if (loginCode.length === 0) {
+				if (loginRes.code.length === 0) {
 					finishPay()
 					uni.showToast({ title: '获取微信登录凭证失败', icon: 'none' })
 					return
 				}
-				submitWechatPaymentOrder(loginCode)
+				const body = paymentBody()
+				body.set('login_code', loginRes.code)
+				post('/payments/rehab-plan/orders', body, (res) => {
+					if (res.getNumber('code', 0) !== 200) {
+						finishPay()
+						uni.showToast({ title: res.getString('message') ?? '微信支付下单失败', icon: 'none' })
+						return
+					}
+					const data = res.getJSON('data')
+					if (data == null) {
+						finishPay()
+						return
+					}
+					if (data.getString('status') === 'PAID') {
+						finishPay()
+						showPlanSuccess(data, '微信支付')
+						return
+					}
+					const outTradeNo = data.getString('out_trade_no') ?? ''
+					const payment = data.getJSON('payment')
+					if (outTradeNo.length === 0 || payment == null) {
+						finishPay()
+						uni.showToast({ title: '微信支付参数不完整', icon: 'none' })
+						return
+					}
+					requestWechatPayment(outTradeNo, payment)
+				}, (message) => {
+					finishPay()
+					uni.showToast({ title: message, icon: 'none' })
+				})
 			},
 			fail: () => {
 				finishPay()
 				uni.showToast({ title: '获取微信登录凭证失败', icon: 'none' })
 			}
-		})
-	}
-
-	function submitWechatPaymentOrder (loginCode: string): void {
-		const body = new UTSJSONObject()
-		body.set('course_id', courseId.value)
-		body.set('stage_id', stageId.value)
-		body.set('login_code', loginCode)
-		post('/payments/rehab-stage/orders', body, (res) => {
-			if (res.getNumber('code', 0) !== 200) {
-				finishPay()
-				uni.showToast({ title: res.getString('message') ?? '支付失败，请稍后重试', icon: 'none' })
-				return
-			}
-			const data = res.getJSON('data')
-			if (data == null) {
-				finishPay()
-				uni.showToast({ title: '支付订单数据为空', icon: 'none' })
-				return
-			}
-			if (data.getString('status') === 'PAID') {
-				finishPay()
-				showUnlockSuccess(data, price.value, '微信支付')
-				return
-			}
-			const outTradeNo = data.getString('out_trade_no') ?? ''
-			const payment = data.getJSON('payment')
-			if (outTradeNo.length === 0 || payment == null) {
-				finishPay()
-				uni.showToast({ title: '微信支付参数不完整', icon: 'none' })
-				return
-			}
-			requestWechatPayment(outTradeNo, payment)
-		}, (msg) => {
-			finishPay()
-			uni.showToast({ title: msg, icon: 'none' })
 		})
 	}
 
@@ -264,23 +300,17 @@
 			package: payment.getString('package') ?? '',
 			signType: 'RSA',
 			paySign: payment.getString('pay_sign') ?? '',
-			success: () => {
-				startPaymentPolling(outTradeNo)
-			},
+			success: () => startPaymentPolling(outTradeNo),
 			fail: (error) => {
 				finishPay()
 				const message = error.errMsg ?? ''
-				if (message.indexOf('cancel') >= 0) {
-					uni.showToast({ title: '已取消支付', icon: 'none' })
-				} else {
-					uni.showToast({ title: '微信支付未完成', icon: 'none' })
-				}
+				uni.showToast({ title: message.indexOf('cancel') >= 0 ? '已取消支付' : '微信支付未完成', icon: 'none' })
 			}
 		})
 		// #endif
 		// #ifndef MP-WEIXIN
 		finishPay()
-		uni.showToast({ title: '当前平台不支持微信小程序支付', icon: 'none' })
+		uni.showToast({ title: '当前平台不支持微信支付', icon: 'none' })
 		// #endif
 	}
 
@@ -298,20 +328,14 @@
 
 	function pollPaymentStatus (): void {
 		paymentPollTimer = -1
-		if (activeOutTradeNo.length === 0) {
-			return
-		}
+		if (activeOutTradeNo.length === 0) return
 		if (paymentPollCount >= 60) {
 			finishPay()
 			uni.showToast({ title: '支付结果确认中，请稍后查看订单', icon: 'none' })
 			return
 		}
 		paymentPollCount++
-		const outTradeNo = activeOutTradeNo
-		get('/payments/orders/' + encodeURIComponent(outTradeNo) + '/status', (res) => {
-			if (activeOutTradeNo !== outTradeNo) {
-				return
-			}
+		get('/payments/orders/' + encodeURIComponent(activeOutTradeNo) + '/status', (res) => {
 			if (res.getNumber('code', 0) !== 200) {
 				schedulePaymentPoll()
 				return
@@ -324,38 +348,31 @@
 			const status = data.getString('status') ?? 'PENDING'
 			if (status === 'PAID') {
 				finishPay()
-				showUnlockSuccess(data, price.value, '微信支付')
+				showPlanSuccess(data, '微信支付')
 				return
 			}
 			if (status === 'CLOSED' || status === 'REFUNDED') {
 				finishPay()
-				uni.showToast({ title: status === 'CLOSED' ? '支付订单已关闭' : '支付订单已退款', icon: 'none' })
+				uni.showToast({ title: '支付订单已关闭', icon: 'none' })
 				return
 			}
 			schedulePaymentPoll()
-		}, () => {
-			if (activeOutTradeNo === outTradeNo) {
-				schedulePaymentPoll()
-			}
-		})
+		}, () => schedulePaymentPoll())
 	}
 
-	function showUnlockSuccess (data: UTSJSONObject, fallbackAmount: string, fallbackPaymentTypeText: string): void {
-		const amount = data.getString('amount') ?? fallbackAmount
-		const orderNo = data.getString('order_no') ?? (data.getString('out_trade_no') ?? '')
-		const paymentTime = data.getString('payment_time') ?? ''
-		const paymentTypeText = data.getString('payment_type_text') ?? fallbackPaymentTypeText
-		const resultCourseTitle = data.getString('course_title') ?? courseTitle.value
-		const resultStageTitle = data.getString('stage_title') ?? stageTitle.value
+	function showPlanSuccess (data: UTSJSONObject, paymentText: string): void {
+		const planOrderId = data.getString('plan_order_id') ?? data.getString('id') ?? ''
+		const resultTitle = '专属康复方案'
+		const amount = data.getString('amount') ?? price.value
+		const paymentTime = data.getString('payment_time') ?? data.getString('paid_at') ?? ''
+		const orderNo = data.getString('order_no') ?? data.getString('out_trade_no') ?? ''
 		uni.redirectTo({
-			url: '/pages/rehab-unlock-success/rehab-unlock-success'
-				+ '?amount=' + encodeURIComponent(amount)
-				+ '&orderNo=' + encodeURIComponent(orderNo)
+			url: '/pages/rehab-unlock-success/rehab-unlock-success?planOrderId=' + encodeURIComponent(planOrderId)
+				+ '&title=' + encodeURIComponent(resultTitle)
+				+ '&amount=' + encodeURIComponent(amount)
 				+ '&time=' + encodeURIComponent(paymentTime)
-				+ '&paymentTypeText=' + encodeURIComponent(paymentTypeText)
-				+ '&courseTitle=' + encodeURIComponent(resultCourseTitle)
-				+ '&stageTitle=' + encodeURIComponent(resultStageTitle)
-				+ (returnToFilter.value ? '&returnToFilter=1' : '')
+				+ '&orderNo=' + encodeURIComponent(orderNo)
+				+ '&paymentTypeText=' + encodeURIComponent(paymentText)
 		})
 	}
 
@@ -375,31 +392,28 @@
 	}
 
 	function goBack (): void {
-		if (!paying.value) {
-			uni.navigateBack()
-		}
+		if (!paying.value) uni.navigateBack()
 	}
 </script>
 
 <style lang="scss">
 	.page {
 		display: flex;
-		flex-direction: column;
 		height: 100vh;
-		background: #F7F8FA;
+		flex-direction: column;
+		overflow: hidden;
+		background: #F4F6F8;
 	}
 
-	.hero {
-		background-image: linear-gradient(142deg, #FF8A43 0%, #FA4D1A 100%);
-	}
-
-	.safe-nav {
-		width: 100%;
+	.nav-shell {
+		flex: 0 0 auto;
+		background: #FFFFFF;
+		border-bottom: 1px solid #F1F2F4;
 	}
 
 	.nav-row {
-		height: 44px;
 		display: flex;
+		height: 50px;
 		flex-direction: row;
 		align-items: center;
 		padding: 0 16px;
@@ -407,20 +421,20 @@
 	}
 
 	.back-button {
+		display: flex;
 		width: 32px;
 		height: 32px;
-		display: flex;
 		align-items: center;
 		justify-content: center;
 		border-radius: 16px;
-		background: rgba(255, 255, 255, 0.22);
+		background: #F5F6F8;
 	}
 
 	.back-glyph {
 		margin-top: -3px;
 		font-size: 28px;
-		line-height: 28px;
-		color: #FFFFFF;
+		line-height: 30px;
+		color: #1A1D24;
 	}
 
 	.nav-title {
@@ -428,7 +442,7 @@
 		text-align: center;
 		font-size: 17px;
 		font-weight: 600;
-		color: #FFFFFF;
+		color: #1A1D24;
 	}
 
 	.nav-placeholder {
@@ -436,85 +450,226 @@
 		height: 32px;
 	}
 
-	.product-summary {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-		padding: 20px 16px 28px;
-	}
-
-	.product-title {
-		font-size: 20px;
-		font-weight: 700;
-		line-height: 28px;
-		color: #FFFFFF;
-	}
-
-	.product-description {
-		font-size: 12px;
-		line-height: 18px;
-		color: rgba(255, 255, 255, 0.78);
-	}
-
-	.price-row {
-		display: flex;
-		flex-direction: row;
-		align-items: baseline;
-		gap: 8px;
-	}
-
-	.price-current {
-		font-size: 28px;
-		font-weight: 700;
-		color: #FFFFFF;
-	}
-
-	.price-original {
-		font-size: 12px;
-		color: rgba(255, 255, 255, 0.62);
-		text-decoration: line-through;
+	.content-scroll {
+		min-height: 0;
+		flex: 1;
+		height: 0;
 	}
 
 	.content {
-		flex: 1;
-		padding: 16px;
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
+		padding: 16px 16px 28px;
 		box-sizing: border-box;
+	}
+
+	.summary-card {
+		display: flex;
+		flex-direction: column;
+		padding: 17px;
+		border: 1px solid #FFE1D4;
+		border-radius: 16px;
+		background-image: linear-gradient(135deg, #FFFDFC 0%, #FFF4EE 100%);
+		box-shadow: 0 8px 22px rgba(240, 90, 42, 0.07);
+		box-sizing: border-box;
+	}
+
+	.summary-main {
+		display: flex;
+		flex-direction: row;
+		align-items: flex-start;
+		gap: 12px;
+	}
+
+	.summary-icon-wrap {
+		display: flex;
+		width: 46px;
+		height: 46px;
+		flex: 0 0 46px;
+		align-items: center;
+		justify-content: center;
+		border-radius: 14px;
+		background: #FFFFFF;
+		box-shadow: 0 4px 12px rgba(240, 90, 42, 0.08);
+	}
+
+	.summary-icon {
+		width: 34px;
+		height: 34px;
+	}
+
+	.summary-copy {
+		display: flex;
+		min-width: 0;
+		flex: 1;
+		flex-direction: column;
+	}
+
+	.summary-tags {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		gap: 5px;
+	}
+
+	.summary-tag {
+		padding: 3px 8px;
+		border-radius: 10px;
+		background: #FFE9DE;
+	}
+
+	.summary-tag-text {
+		font-size: 10px;
+		font-weight: 500;
+		color: #E85225;
+	}
+
+	.summary-tag-more {
+		background: #F2F3F5;
+	}
+
+	.summary-tag-more-text {
+		font-size: 10px;
+		color: #7C838C;
+	}
+
+	.product-title {
+		margin-top: 7px;
+		font-size: 17px;
+		font-weight: 700;
+		line-height: 24px;
+		color: #241E1B;
+	}
+
+	.product-description {
+		margin-top: 4px;
+		font-size: 11px;
+		line-height: 17px;
+		color: #8B7469;
+	}
+
+	.summary-divider {
+		width: 100%;
+		height: 1px;
+		margin: 14px 0 12px;
+		background: #F4E3DB;
+	}
+
+	.price-line {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.price-label {
+		font-size: 11px;
+		color: #9A8378;
+	}
+
+	.price-copy {
+		display: flex;
+		flex-direction: row;
+		align-items: baseline;
+		gap: 7px;
+	}
+
+	.price-current {
+		font-size: 23px;
+		font-weight: 700;
+		line-height: 28px;
+		color: #F05A2A;
+	}
+
+	.price-original {
+		font-size: 11px;
+		color: #B8A39A;
+		text-decoration: line-through;
 	}
 
 	.payment-card {
 		padding: 16px;
-		border-radius: 14px;
+		border: 1px solid #EEF0F3;
+		border-radius: 16px;
 		background: #FFFFFF;
-		box-shadow: 0 4px 16px rgba(23, 26, 36, 0.04);
+		box-shadow: 0 6px 18px rgba(23, 26, 36, 0.04);
+		box-sizing: border-box;
+	}
+
+	.card-head {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 12px;
+	}
+
+	.card-title-wrap {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.card-title-icon {
+		display: flex;
+		width: 27px;
+		height: 27px;
+		align-items: center;
+		justify-content: center;
+		border-radius: 8px;
+		background: #FFF1E9;
+	}
+
+	.card-title-image {
+		width: 15px;
+		height: 15px;
 	}
 
 	.card-title {
-		display: block;
-		margin-bottom: 10px;
 		font-size: 14px;
-		font-weight: 600;
+		font-weight: 700;
 		color: #1A1D24;
 	}
 
 	.payment-row {
 		display: flex;
+		min-height: 62px;
 		flex-direction: row;
 		align-items: center;
 		gap: 12px;
-		padding: 12px 0;
+		margin: 0 -8px;
+		padding: 9px 10px;
+		border: 1px solid transparent;
+		border-radius: 12px;
+		box-sizing: border-box;
+	}
+
+	.payment-row-active {
+		border-color: #FFD8C8;
+		background: #FFF9F6;
 	}
 
 	.payment-icon {
-		width: 32px;
-		height: 32px;
-		flex-shrink: 0;
+		width: 34px;
+		height: 34px;
+		flex: 0 0 34px;
 	}
 
 	.payment-copy {
-		flex: 1;
 		display: flex;
+		min-width: 0;
+		flex: 1;
 		flex-direction: column;
-		gap: 2px;
+		gap: 3px;
+	}
+
+	.payment-name-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 7px;
 	}
 
 	.payment-name {
@@ -524,17 +679,31 @@
 	}
 
 	.payment-desc {
-		font-size: 11px;
+		font-size: 10px;
+		line-height: 15px;
 		color: #9CA3AF;
 	}
 
+	.recommend-badge {
+		padding: 2px 6px;
+		border-radius: 8px;
+		background: #EAF8EF;
+	}
+
+	.recommend-text {
+		font-size: 9px;
+		font-weight: 500;
+		color: #17A34A;
+	}
+
 	.radio {
+		display: flex;
 		width: 20px;
 		height: 20px;
-		display: flex;
+		flex: 0 0 20px;
 		align-items: center;
 		justify-content: center;
-		border: 1px solid #D1D5DB;
+		border: 1px solid #CDD2D9;
 		border-radius: 10px;
 		box-sizing: border-box;
 	}
@@ -544,70 +713,86 @@
 	}
 
 	.radio-dot {
-		width: 8px;
-		height: 8px;
-		border-radius: 4px;
+		width: 9px;
+		height: 9px;
+		border-radius: 5px;
 		background: #FF6B35;
 	}
 
 	.divider {
 		width: 100%;
 		height: 1px;
-		background: #F1F2F5;
-	}
-
-	.agreement-tip {
-		display: block;
-		margin-top: 14px;
-		text-align: center;
-		font-size: 11px;
-		line-height: 16px;
-		color: #9CA3AF;
+		margin: 2px 0;
+		background: #F2F3F5;
 	}
 
 	.footer {
 		display: flex;
+		flex: 0 0 auto;
 		flex-direction: row;
 		align-items: center;
-		gap: 12px;
-		padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+		gap: 14px;
+		padding: 11px 16px calc(11px + env(safe-area-inset-bottom));
 		background: #FFFFFF;
-		box-shadow: 0 -4px 16px rgba(23, 26, 36, 0.06);
+		box-shadow: 0 -6px 20px rgba(23, 26, 36, 0.07);
 	}
 
 	.total-group {
 		display: flex;
+		width: 102px;
+		flex: 0 0 102px;
 		flex-direction: column;
-		gap: 2px;
-		min-width: 90px;
+		gap: 1px;
 	}
 
 	.total-label {
-		font-size: 11px;
+		font-size: 10px;
+		line-height: 15px;
 		color: #9CA3AF;
 	}
 
+	.total-price-row {
+		display: flex;
+		flex-direction: row;
+		align-items: baseline;
+		gap: 2px;
+	}
+
+	.total-symbol {
+		font-size: 12px;
+		font-weight: 600;
+		color: #F05A2A;
+	}
+
 	.total-amount {
-		font-size: 20px;
+		font-size: 22px;
 		font-weight: 700;
-		color: #FF6B35;
+		line-height: 27px;
+		color: #F05A2A;
 	}
 
 	.pay-button {
-		flex: 1;
-		height: 46px;
-		margin: 0;
-		border-radius: 23px;
-		background-color: #FF6B35;
-		background-image: linear-gradient(135deg, #FF8A3D 0%, #FF5124 100%);
 		display: flex;
+		height: 48px;
+		flex: 1;
+		flex-direction: row;
 		align-items: center;
 		justify-content: center;
+		gap: 7px;
+		margin: 0;
+		border-radius: 24px;
+		background-image: linear-gradient(135deg, #FF8A3D 0%, #FF5124 100%);
+		box-shadow: 0 8px 18px rgba(240, 90, 42, 0.2);
 		line-height: 1;
 	}
 
 	.pay-button::after {
 		border: none;
+	}
+
+	.pay-icon {
+		width: 16px;
+		height: 12px;
 	}
 
 	.pay-button-text {

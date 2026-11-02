@@ -144,6 +144,10 @@
 			loadEquipmentOrder()
 			return
 		}
+		if (kind.value === 'plan') {
+			loadPlanOrder()
+			return
+		}
 		loadCourseOrder()
 	}
 
@@ -158,10 +162,10 @@
 				showLoadError('关联订单加载失败')
 				return
 			}
-			const courseTitle = data.getString('course_title') ?? '康复课程'
-			const stageTitle = data.getString('stage_title') ?? ''
-			orderTypeText.value = '组合康复阶段课程'
-			productName.value = stageTitle.length > 0 ? courseTitle + ' · ' + stageTitle : courseTitle
+			const planTitle = '专属康复方案'
+			const tagName = data.getString('tag_name') ?? ''
+			orderTypeText.value = '康复方案订单'
+			productName.value = tagName.length > 0 ? tagName + ' · ' + planTitle : planTitle
 			orderNo.value = data.getString('order_no') ?? orderNo.value
 			tradeNo.value = data.getString('payment_no') ?? orderNo.value
 			paymentType.value = paymentTypeText(data.getNumber('payment_type', 1))
@@ -179,6 +183,31 @@
 		}, () => {
 			showLoadError('关联订单加载失败')
 		})
+	}
+
+	function loadPlanOrder (): void {
+		get('/rehab_plan/orders/by-no/' + encodeURIComponent(orderNo.value), (res) => {
+			if (res.getNumber('code', 0) !== 200) {
+				showLoadError(res.getString('message') ?? '方案订单加载失败')
+				return
+			}
+			const data = res.getJSON('data')
+			if (data == null) {
+				showLoadError('方案订单加载失败')
+				return
+			}
+			orderTypeText.value = '康复方案订单'
+			productName.value = data.getString('title') ?? '康复方案'
+			orderNo.value = data.getString('order_no') ?? orderNo.value
+			tradeNo.value = data.getString('payment_no') ?? orderNo.value
+			paymentType.value = data.getString('payment_type_text') ?? paymentTypeText(data.getNumber('payment_type', 0))
+			orderTime.value = formatOrderTime(data.getString('created_at') ?? '')
+			paymentTime.value = formatOrderTime(data.getString('paid_at') ?? '')
+			statusText.value = data.getString('status') === 'REFUNDED' ? '已退款' : data.getString('status') === 'PAID' ? '已完成' : '已关闭'
+			isRefunded.value = data.getString('status') === 'REFUNDED'
+			amountText.value = formatMoney(data.getString('amount') ?? '0', 2)
+			canViewPlan.value = data.getString('status') === 'PAID'
+		}, () => showLoadError('方案订单加载失败'))
 	}
 
 	function loadCourseOrder (): void {

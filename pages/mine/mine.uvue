@@ -7,9 +7,7 @@
 				<button
 					class="tap-button user-row"
 					hover-class="none"
-					:open-type="canTriggerPhoneLogin() ? 'getPhoneNumber' : ''"
 					@click="handleLoginTap"
-					@getphonenumber="onGetPhoneNumber"
 				>
 					<image v-if="avatarUrl.length > 0" class="avatar" :src="avatarUrl" mode="aspectFit"></image>
 					<image v-else class="avatar" src="/static/icons/ic-avatar.svg" mode="aspectFit"></image>
@@ -76,9 +74,7 @@
 				<button
 					class="tap-button login-button"
 					hover-class="none"
-					:open-type="canTriggerPhoneLogin() ? 'getPhoneNumber' : ''"
 					@click="handleLoginTap"
-					@getphonenumber="onGetPhoneNumber"
 				>
 					<text class="login-button-text">立即登录</text>
 				</button>
@@ -87,9 +83,7 @@
 			<button
 				class="tap-button plan-entry-card"
 				hover-class="none"
-				:open-type="canTriggerPhoneLogin() ? 'getPhoneNumber' : ''"
 				@click="goMyPlans"
-				@getphonenumber="onGetPhoneNumber"
 			>
 				<view class="plan-entry-icon-wrap">
 					<image class="plan-entry-icon" src="/static/icons/ic-mine-scheme.svg" mode="aspectFit"></image>
@@ -110,9 +104,7 @@
 				<button
 					class="tap-button menu-row"
 					hover-class="none"
-					:open-type="canTriggerPhoneLogin() ? 'getPhoneNumber' : ''"
 					@click="goProfile"
-					@getphonenumber="onGetPhoneNumber"
 				>
 					<image class="menu-icon" src="/static/icons/ic-personal-data.svg" mode="aspectFit"></image>
 					<text class="menu-title">个人资料</text>
@@ -123,9 +115,7 @@
 				<button
 					class="tap-button menu-row"
 					hover-class="none"
-					:open-type="canTriggerPhoneLogin() ? 'getPhoneNumber' : ''"
 					@click="goPainRecord"
-					@getphonenumber="onGetPhoneNumber"
 				>
 					<image class="menu-icon" src="/static/icons/ic-pain-data.svg" mode="aspectFit"></image>
 					<text class="menu-title">伤痛档案</text>
@@ -160,13 +150,12 @@
 </template>
 
 <script setup lang="uts">
-	import { calculateRehabDays, fetchCurrentUser, fetchCurrentUserInfo, hasLoginAgreement, hasLocalToken, loginByWechatPhone } from '../../common/auth'
+	import { calculateRehabDays, fetchCurrentUser, fetchCurrentUserInfo, hasLocalToken } from '../../common/auth'
 	import { resolveFileUrl } from '../../common/forum'
 	import { formatMoney } from '../../common/money'
 	import { get } from '../../common/request'
 
 	const navSpaceHeight = ref(64)
-	const agreementAccepted = ref(false)
 	const loggedIn = ref(false)
 	const userName = ref('未登录')
 	const userHint = ref('点击登录，同步康复计划与伤痛档案')
@@ -198,7 +187,6 @@
 	})
 
 	function refreshLoginState (): void {
-		agreementAccepted.value = hasLoginAgreement()
 		if (!hasLocalToken()) {
 			resetAuthenticatedState()
 			return
@@ -276,7 +264,7 @@
 			painRecordStatus.value = injuryHistory.length > 0 || injuryRecent.length > 0 || dischargeAbstract.length > 0 || imageData.length > 0 ? '已维护' : '未维护'
 		}, () => {})
 
-		get('/rehab_combination_course/unlocks', (res) => {
+		get('/rehab_plan/orders/mine', (res) => {
 			if (res.getNumber('code', 0) !== 200) {
 				return
 			}
@@ -316,10 +304,6 @@
 		balanceText.value = '0.00'
 	}
 
-	function canTriggerPhoneLogin (): boolean {
-		return agreementAccepted.value && !loggedIn.value
-	}
-
 	function goRecharge (): void {
 		uni.navigateTo({
 			url: '/pages/recharge/recharge'
@@ -356,41 +340,8 @@
 		if (loggedIn.value) {
 			return
 		}
-		if (!agreementAccepted.value) {
-			uni.navigateTo({
-				url: '/pages/login-guide/login-guide'
-			})
-		}
-	}
-
-	function onGetPhoneNumber (event: UniEvent): void {
-		if (!canTriggerPhoneLogin()) {
-			return
-		}
-
-		const phoneCode = event.detail.code as string
-		if (phoneCode.length === 0) {
-			uni.showToast({
-				title: '未获取到手机号授权',
-				icon: 'none'
-			})
-			return
-		}
-
-		uni.showLoading({ title: '登录中' })
-		loginByWechatPhone(phoneCode, () => {
-			uni.hideLoading()
-			uni.showToast({
-				title: '登录成功',
-				icon: 'success'
-			})
-			refreshLoginState()
-		}, (message) => {
-			uni.hideLoading()
-			uni.showToast({
-				title: message,
-				icon: 'none'
-			})
+		uni.navigateTo({
+			url: '/pages/login-guide/login-guide'
 		})
 	}
 </script>

@@ -70,41 +70,21 @@
 					</view>
 					<view class="message-bubble" :class="item.role === 'user' ? 'user-bubble' : 'ai-bubble'">
 						<text class="message-text" :class="{ 'user-message-text': item.role === 'user' }">{{ item.content }}</text>
-						<view v-if="item.course != null" class="course-card">
+						<view v-if="item.plan != null" class="course-card">
 							<view class="course-card-head">
 								<view class="course-tag-row">
-									<view class="course-tag"><text>{{ item.course.tagName }}</text></view>
-									<view class="course-tag course-tag-stage"><text>{{ item.course.stageTitle }}</text></view>
+									<view class="course-tag"><text>{{ item.plan.tagName }}</text></view>
+									<view class="course-tag course-tag-stage"><text>专属康复方案</text></view>
 								</view>
-								<text class="course-title">{{ item.course.title }}</text>
-								<text v-if="item.course.dictionaryText.length > 0" class="course-dictionary">{{ item.course.dictionaryText }}</text>
+								<text class="course-title">{{ item.plan.tagName }}专属康复方案</text>
+								<text class="course-dictionary">{{ item.plan.resourceSummary() }}</text>
 							</view>
-							<view v-if="!item.course.unlocked" class="unlock-mask">
-								<view class="lock-badge">
-									<view class="lock-ring"></view>
-									<view class="lock-body"><view class="lock-hole"></view></view>
+							<view class="plan-preview-body">
+								<view class="plan-preview-price">
+									<text class="plan-preview-price-text">¥{{ item.plan.price }}</text>
 								</view>
-								<text class="unlock-title">解锁查看完整康复方案</text>
-								<text class="unlock-subtitle">完整阶段安排 · 动作图文详解 · 视频跟练</text>
-								<view class="unlock-button" @click="onUnlockTap(item.course)">
-									<text class="unlock-button-text">{{ item.course.unlockButtonText }}</text>
-								</view>
-							</view>
-							<view v-else class="unlocked-body">
-								<view class="unlocked-current-stage">
-									<text class="unlocked-current-kicker">本次解锁阶段</text>
-									<text class="unlocked-current-title">{{ item.course.stageTitle }}</text>
-									<text v-if="item.course.stageIndexText.length > 0" class="unlocked-current-meta">{{ item.course.stageIndexText }}</text>
-									<text v-if="item.course.stageRemark.length > 0" class="unlocked-current-remark">{{ item.course.stageRemark }}</text>
-								</view>
-								<view class="unlocked-actions">
-									<view class="unlocked-action unlocked-action-contact" @click="onContactCoachTap(item.course)">
-										<image class="unlocked-action-icon" src="/static/icons/ic-online-message.svg" mode="aspectFit"></image>
-										<text class="unlocked-action-text">联系康复师</text>
-									</view>
-									<view class="unlocked-action unlocked-action-plan" @click="onViewCourseTap(item.course)">
-										<text class="unlocked-action-text unlocked-action-text-plan">查看完整方案</text>
-									</view>
+								<view class="unlock-button" @click="onOpenPlanPreview(item.plan)">
+									<text class="unlock-button-text">生成方案</text>
 								</view>
 							</view>
 						</view>
@@ -178,7 +158,7 @@
 					<view class="prescription-filter-content">
 						<view class="prescription-filter-group">
 							<view class="prescription-filter-group-head">
-								<text class="prescription-filter-group-title">复健类型</text>
+								<text class="prescription-filter-group-title">康复标签</text>
 								<view class="prescription-filter-reset" @click="resetPrescriptionFilter">
 									<text class="prescription-filter-reset-text">重置</text>
 								</view>
@@ -204,10 +184,10 @@
 
 					<template v-if="selectedPrescriptionTagId.length > 0">
 						<view v-if="prescriptionDictionariesLoading" class="prescription-filter-state">
-							<text class="prescription-filter-state-text">正在加载处方字典...</text>
+							<text class="prescription-filter-state-text">正在加载康复标签...</text>
 						</view>
 						<view v-else-if="prescriptionDictionaries.length === 0" class="prescription-filter-state">
-							<text class="prescription-filter-state-text">该标签下暂无处方字典</text>
+							<text class="prescription-filter-state-text">该标签下暂无康复分类</text>
 						</view>
 						<template v-else>
 							<view v-for="dictionary in prescriptionDictionaries" :key="dictionary.id" class="prescription-filter-group">
@@ -292,7 +272,7 @@
 <script setup lang="uts">
 	import { hasLocalToken } from '../../common/auth'
 	import { PrescriptionFilterDictionary, PrescriptionFilterItem, PrescriptionFilterTag } from '../../common/prescription-filter'
-	import { RehabChatCourse, RehabChatMessage, RehabChatTopic } from '../../common/rehab-chat'
+	import { RehabChatMessage, RehabChatPlan, RehabChatTopic } from '../../common/rehab-chat'
 	import { del, get, post, postStream } from '../../common/request'
 
 	const statusBarHeight = ref(24)
@@ -329,16 +309,17 @@
 	const prescriptionDictionariesLoading = ref(false)
 	const selectedPrescriptionItemIds = ref<string[]>([])
 	const matchedStageCount = ref(0)
+	const searchedPlanSignature = ref('')
 	const matchedStageLoading = ref(false)
 	const prescriptionSearchPerformed = ref(false)
 	const searchedPrescriptionTagId = ref('')
 	const searchedPrescriptionItemIds = ref<string[]>([])
 	const searchedPrescriptionLabels = ref<string[]>([])
 	const quickQuestions = ref<string[]>([
-		'跑步膝痛怎么恢复',
-		'肩颈酸痛怎么缓解',
-		'久坐腰背不适',
-		'术后力量怎么练'
+		'膝关节术后4周，疼痛3分，轻度肿胀怎么练？',
+		'前交叉韧带重建术后6周，活动度受限怎么康复？',
+		'三踝骨折术后8周，走路不稳怎么训练？',
+		'跟腱重建术后12周，力量不足怎么练？'
 	])
 	const SEARCH_FAB_SIZE = 52
 	const SEARCH_FAB_EDGE = 16
@@ -365,13 +346,13 @@
 		if (matchedStageCount.value === 0) {
 			return '未检索到匹配的方案'
 		}
-		return '查看 ' + matchedStageCount.value.toString() + ' 个匹配方案'
+		return '生成方案'
 	})
 	const prescriptionActionDisabled = computed(() => {
 		return matchedStageLoading.value || !prescriptionSearchPerformed.value || matchedStageCount.value === 0
 	})
 	const prescriptionSearchDisabled = computed(() => {
-		return selectedPrescriptionTagId.value.length === 0 || matchedStageLoading.value
+		return selectedPrescriptionTagId.value.length === 0 || matchedStageLoading.value || !hasAllDictionarySelections()
 	})
 
 	onLoad(() => {
@@ -382,7 +363,7 @@
 
 	onShow(() => {
 		if (!hasLocalToken()) {
-			initialLoading.value = false
+			resetRehabAuthState()
 			return
 		}
 		if (sending.value) {
@@ -394,6 +375,46 @@
 			loadLatestSession()
 		}
 	})
+
+	function resetRehabAuthState (): void {
+		sessionId.value = ''
+		currentTopicTitle.value = '新话题'
+		messages.value = []
+		topics.value = []
+		hasMore.value = false
+		nextBefore.value = ''
+		initialLoading.value = false
+		loadingLatest.value = false
+		loadingTopics.value = false
+		prescriptionFilterVisible.value = false
+		prescriptionDictionaries.value = []
+		selectedPrescriptionTagId.value = ''
+		selectedPrescriptionTagTitle.value = ''
+		selectedPrescriptionItemIds.value = []
+		matchedStageCount.value = 0
+		prescriptionSearchPerformed.value = false
+	}
+
+	function ensureRehabLogin (): boolean {
+		if (hasLocalToken()) {
+			return true
+		}
+		uni.navigateTo({
+			url: '/pages/login-guide/login-guide'
+		})
+		return false
+	}
+
+	function handleRehabUnauthorized (res: UTSJSONObject): boolean {
+		if (res.getNumber('code', 0) !== 401) {
+			return false
+		}
+		resetRehabAuthState()
+		uni.navigateTo({
+			url: '/pages/login-guide/login-guide'
+		})
+		return true
+	}
 
 	function parseMessageList (data: UTSJSONObject): RehabChatMessage[] {
 		const result: RehabChatMessage[] = []
@@ -421,6 +442,9 @@
 		get('/rehab_chat/latest', (res) => {
 			loadingLatest.value = false
 			initialLoading.value = false
+			if (handleRehabUnauthorized(res)) {
+				return
+			}
 			if (res.getNumber('code', 0) !== 200) {
 				return
 			}
@@ -458,6 +482,9 @@
 		loadingTopics.value = true
 		get('/rehab_chat/topics', (res) => {
 			loadingTopics.value = false
+			if (handleRehabUnauthorized(res)) {
+				return
+			}
 			if (res.getNumber('code', 0) !== 200) {
 				return
 			}
@@ -488,6 +515,9 @@
 		const url = '/rehab_chat/topics/' + encodeURIComponent(sessionId.value) + '/messages?before=' + encodeURIComponent(nextBefore.value) + '&pageSize=20'
 		get(url, (res) => {
 			loadingOlder.value = false
+			if (handleRehabUnauthorized(res)) {
+				return
+			}
 			if (res.getNumber('code', 0) !== 200) {
 				return
 			}
@@ -595,6 +625,9 @@
 	}
 
 	function onTypesSearchTap (): void {
+		if (!ensureRehabLogin()) {
+			return
+		}
 		if (searchFabTouchMoved) {
 			searchFabTouchMoved = false
 			return
@@ -691,6 +724,23 @@
 		return false
 	}
 
+	function hasAllDictionarySelections (): boolean {
+		for (let i = 0; i < prescriptionDictionaries.value.length; i++) {
+			const dictionary = prescriptionDictionaries.value[i]
+			let selected = false
+			for (let j = 0; j < dictionary.items.length; j++) {
+				if (isPrescriptionItemSelected(dictionary.items[j].id)) {
+					selected = true
+					break
+				}
+			}
+			if (!selected) {
+				return false
+			}
+		}
+		return prescriptionDictionaries.value.length > 0
+	}
+
 	function selectPrescriptionItem (dictionary: PrescriptionFilterDictionary, item: PrescriptionFilterItem): void {
 		const alreadySelected = isPrescriptionItemSelected(item.id)
 		const next: string[] = []
@@ -716,13 +766,17 @@
 		prescriptionSearchPerformed.value = false
 		matchedStageLoading.value = false
 		matchedStageCount.value = 0
+		searchedPlanSignature.value = ''
 	}
 
 	function runPrescriptionSearch (): void {
+		if (!ensureRehabLogin()) {
+			return
+		}
 		if (prescriptionSearchDisabled.value) {
 			if (selectedPrescriptionTagId.value.length === 0) {
 				uni.showToast({
-					title: '请先选择复健类型',
+					title: '请先选择康复标签',
 					icon: 'none'
 				})
 			}
@@ -739,22 +793,23 @@
 		prescriptionSearchPerformed.value = false
 		matchedStageLoading.value = true
 		matchedStageCount.value = 0
-		let url = '/rehab_combination_course/mini_match?prescription_tag_id=' + encodeURIComponent(searchTagId)
-		if (searchItemIds.length > 0) {
-			let itemIds = ''
-			for (let i = 0; i < searchItemIds.length; i++) {
-				if (itemIds.length > 0) {
-					itemIds += ','
-				}
-				itemIds += searchItemIds[i]
-			}
-			url += '&dictionary_item_ids=' + encodeURIComponent(itemIds)
+		const body = new UTSJSONObject()
+		body.set('prescription_tag_id', searchTagId)
+		const selectedItems: UTSJSONObject[] = []
+		for (let i = 0; i < searchItemIds.length; i++) {
+			const item = new UTSJSONObject()
+			item.set('dictionary_item_id', searchItemIds[i])
+			selectedItems.push(item)
 		}
-		get(url, (res) => {
+		body.set('dictionary_items', selectedItems)
+		post('/rehab_plan/preview', body, (res) => {
 			if (version !== matchCountRequestVersion) {
 				return
 			}
 			matchedStageLoading.value = false
+			if (handleRehabUnauthorized(res)) {
+				return
+			}
 			if (res.getNumber('code', 0) !== 200) {
 				uni.showToast({
 					title: res.getString('message') ?? '检索失败',
@@ -763,7 +818,8 @@
 				return
 			}
 			const data = res.getJSON('data')
-			matchedStageCount.value = data == null ? 0 : data.getNumber('stage_count', 0)
+			matchedStageCount.value = data == null ? 0 : data.getNumber('total_count', 0)
+			searchedPlanSignature.value = data == null ? '' : (data.getString('plan_signature') ?? '')
 			searchedPrescriptionTagId.value = searchTagId
 			searchedPrescriptionItemIds.value = searchItemIds
 			searchedPrescriptionLabels.value = searchLabels
@@ -789,6 +845,7 @@
 		searchedPrescriptionTagId.value = ''
 		searchedPrescriptionItemIds.value = []
 		searchedPrescriptionLabels.value = []
+		searchedPlanSignature.value = ''
 		invalidatePrescriptionSearch()
 	}
 
@@ -796,17 +853,7 @@
 		if (prescriptionActionDisabled.value) {
 			return
 		}
-		if (!hasLocalToken()) {
-			uni.showModal({
-				title: '请先登录',
-				content: '登录后才能查看匹配方案和课程解锁状态',
-				showCancel: false,
-				success: () => {
-					uni.navigateTo({
-						url: '/pages/login-guide/login-guide'
-					})
-				}
-			})
+		if (!ensureRehabLogin()) {
 			return
 		}
 		let itemIds = ''
@@ -828,6 +875,8 @@
 				+ '&dictionaryItemIds=' + encodeURIComponent(itemIds)
 				+ '&labels=' + encodeURIComponent(labels)
 				+ '&count=' + matchedStageCount.value.toString()
+				+ '&expectedSignature=' + encodeURIComponent(searchedPlanSignature.value)
+				+ '&sourceType=manual'
 		})
 	}
 
@@ -840,7 +889,7 @@
 			const dictionary = prescriptionDictionaries.value[i]
 			for (let j = 0; j < dictionary.items.length; j++) {
 				if (isPrescriptionItemSelected(dictionary.items[j].id)) {
-					labels.push(dictionary.items[j].name)
+					labels.push(dictionary.name + '：' + dictionary.items[j].name)
 				}
 			}
 		}
@@ -871,12 +920,7 @@
 			})
 			return
 		}
-		if (!hasLocalToken()) {
-			uni.showToast({
-				title: '请先登录后再咨询',
-				icon: 'none'
-			})
-			uni.navigateTo({ url: '/pages/login-guide/login-guide' })
+		if (!ensureRehabLogin()) {
 			return
 		}
 
@@ -958,6 +1002,11 @@
 			return
 		}
 		if (event === 'error') {
+			if (payload.getNumber('code', 0) === 401) {
+				resetRehabAuthState()
+				uni.navigateTo({ url: '/pages/login-guide/login-guide' })
+				return
+			}
 			handleStreamFailure(payload.getString('message') ?? '发送失败')
 			return
 		}
@@ -1029,6 +1078,11 @@
 	function handleStreamFailure (messageText: string): void {
 		sending.value = false
 		waitingFirstToken.value = false
+		if (messageText.indexOf('登录已过期') >= 0) {
+			resetRehabAuthState()
+			uni.navigateTo({ url: '/pages/login-guide/login-guide' })
+			return
+		}
 		const userIndex = findMessageIndex(pendingUserMessageId.value)
 		if (userIndex >= 0) {
 			messages.value[userIndex].pending = false
@@ -1049,6 +1103,9 @@
 	function handleFallbackResult (res: UTSJSONObject): void {
 		sending.value = false
 		waitingFirstToken.value = false
+		if (handleRehabUnauthorized(res)) {
+			return
+		}
 		const code = res.getNumber('code', 0)
 		if (code !== 200) {
 			handleStreamFailure(res.getString('message') ?? '发送失败')
@@ -1102,6 +1159,9 @@
 	}
 
 	function openTopicDrawer (): void {
+		if (!ensureRehabLogin()) {
+			return
+		}
 		if (sending.value) {
 			uni.showToast({
 				title: '回复生成中，请稍后再切换',
@@ -1118,6 +1178,9 @@
 	}
 
 	function createNewTopic (silent: boolean): void {
+		if (!ensureRehabLogin()) {
+			return
+		}
 		if (sending.value) {
 			return
 		}
@@ -1125,46 +1188,24 @@
 			topicDrawerVisible.value = false
 			return
 		}
-		const body = new UTSJSONObject()
-		post('/rehab_chat/topics', body, (res) => {
-			if (res.getNumber('code', 0) !== 200) {
-				if (!silent) {
-					uni.showToast({
-						title: res.getString('message') ?? '创建话题失败',
-						icon: 'none'
-					})
-				}
-				return
-			}
-			const data = res.getJSON('data')
-			const topic = data == null ? null : data.getJSON('topic')
-			if (topic == null) {
-				return
-			}
-			sessionId.value = topic.getString('id') ?? ''
-			currentTopicTitle.value = topic.getString('title') ?? '新话题'
-			messages.value = []
-			hasMore.value = false
-			nextBefore.value = ''
-			topicDrawerVisible.value = false
-			loadTopics()
-			if (!silent) {
-				uni.showToast({
-					title: '已新建话题',
-					icon: 'none'
-				})
-			}
-		}, (message) => {
-			if (!silent) {
-				uni.showToast({
-					title: message,
-					icon: 'none'
-				})
-			}
-		})
+		sessionId.value = ''
+		currentTopicTitle.value = '新话题'
+		messages.value = []
+		hasMore.value = false
+		nextBefore.value = ''
+		topicDrawerVisible.value = false
+		if (!silent) {
+			uni.showToast({
+				title: '已进入新话题',
+				icon: 'none'
+			})
+		}
 	}
 
 	function enterTopic (topic: RehabChatTopic): void {
+		if (!ensureRehabLogin()) {
+			return
+		}
 		if (sending.value) {
 			return
 		}
@@ -1186,6 +1227,9 @@
 		const url = '/rehab_chat/topics/' + encodeURIComponent(topicId) + '/messages?pageSize=20'
 		get(url, (res) => {
 			initialLoading.value = false
+			if (handleRehabUnauthorized(res)) {
+				return
+			}
 			if (res.getNumber('code', 0) !== 200) {
 				return
 			}
@@ -1207,6 +1251,9 @@
 	}
 
 	function confirmDeleteTopic (topic: RehabChatTopic): void {
+		if (!ensureRehabLogin()) {
+			return
+		}
 		if (sending.value) {
 			return
 		}
@@ -1223,7 +1270,13 @@
 	}
 
 	function deleteTopic (topic: RehabChatTopic): void {
+		if (!ensureRehabLogin()) {
+			return
+		}
 		del('/rehab_chat/topics/' + encodeURIComponent(topic.id), (res) => {
+			if (handleRehabUnauthorized(res)) {
+				return
+			}
 			if (res.getNumber('code', 0) !== 200) {
 				uni.showToast({
 					title: res.getString('message') ?? '删除失败',
@@ -1247,33 +1300,32 @@
 		})
 	}
 
-	function onUnlockTap (course: RehabChatCourse): void {
-		uni.navigateTo({
-			url: '/pages/rehab-unlock/rehab-unlock?courseId=' + encodeURIComponent(course.id)
-				+ '&stageId=' + encodeURIComponent(course.stageId)
-		})
-	}
-
-	function onContactCoachTap (course: RehabChatCourse | null): void {
-		let url = '/pages/support-chat/support-chat'
-		if (course != null && course.stageId.length > 0) {
-			url += '?courseId=' + encodeURIComponent(course.id)
-				+ '&stageId=' + encodeURIComponent(course.stageId)
+	function onOpenPlanPreview (plan: RehabChatPlan): void {
+		if (!ensureRehabLogin()) {
+			return
 		}
-		uni.navigateTo({ url })
-	}
-
-	function onViewCourseTap (course: RehabChatCourse | null): void {
-		if (course == null || course.stageId.length === 0) {
+		if (plan.prescriptionTagId.length === 0 || plan.planSignature.length === 0) {
 			uni.showToast({
 				title: '方案信息不完整，请稍后重试',
 				icon: 'none'
 			})
 			return
 		}
+		let itemIds = ''
+		for (let i = 0; i < plan.dictionaryItemIds.length; i++) {
+			if (itemIds.length > 0) itemIds += ','
+			itemIds += plan.dictionaryItemIds[i]
+		}
+		let labels = plan.tagName
+		for (let i = 0; i < plan.selectedLabels.length; i++) {
+			labels += '|' + plan.selectedLabels[i]
+		}
 		uni.navigateTo({
-			url: '/pages/rehab-plan/rehab-plan?stageId=' + encodeURIComponent(course.stageId)
-				+ '&courseTitle=' + encodeURIComponent(course.title)
+			url: '/pages/prescription-results/prescription-results?prescriptionTagId=' + encodeURIComponent(plan.prescriptionTagId)
+				+ '&dictionaryItemIds=' + encodeURIComponent(itemIds)
+				+ '&labels=' + encodeURIComponent(labels)
+				+ '&sourceType=ai'
+				+ '&expectedSignature=' + encodeURIComponent(plan.planSignature)
 		})
 	}
 </script>
@@ -1643,6 +1695,24 @@
 		box-sizing: border-box;
 	}
 
+	.plan-preview-body {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 12px;
+		padding: 12px 14px 14px;
+	}
+
+	.plan-preview-price {
+		flex: 1;
+	}
+
+	.plan-preview-price-text {
+		font-size: 18px;
+		font-weight: 700;
+		color: #FF6B35;
+	}
+
 	.course-tag-row {
 		display: flex;
 		flex-direction: row;
@@ -1750,11 +1820,13 @@
 
 	.unlock-button {
 		display: flex;
+		width: auto;
 		align-items: center;
 		justify-content: center;
-		width: 170px;
 		height: 40px;
+		flex-shrink: 0;
 		margin-top: 2px;
+		padding: 0 18px;
 		border-radius: 999px;
 		background-color: #FF6B35;
 		background-image: linear-gradient(135deg, #FF8A3D 0%, #FF5124 100%);

@@ -55,6 +55,14 @@
 					</view>
 				</view>
 
+				<view v-if="planOrderId.length > 0 && !isRefunded" class="help-card" @click="viewPlan">
+					<view class="help-icon-wrap">
+						<image class="help-icon" src="/static/icons/ic-mine-scheme.svg" mode="aspectFit"></image>
+					</view>
+					<text class="help-text">查看方案</text>
+					<text class="help-arrow">›</text>
+				</view>
+
 				<view class="help-card" @click="viewRelatedOrder">
 					<view class="help-icon-wrap">
 						<image class="help-icon" src="/static/icons/ic-order.svg" mode="aspectFit"></image>
@@ -100,6 +108,7 @@
 	const sourceType = ref('balance')
 	const relatedKind = ref('')
 	const relatedOrderNo = ref('')
+	const planOrderId = ref('')
 
 	onLoad((options) => {
 		const sys = uni.getSystemInfoSync()
@@ -138,17 +147,18 @@
 				return
 			}
 			const outTradeNo = order.getString('order_no') ?? sourceOrderNo.value
-			const courseTitle = order.getString('course_title') ?? '康复课程'
-			const stageTitle = order.getString('stage_title') ?? ''
+			const planTitle = '专属康复方案'
+			const tagName = order.getString('tag_name') ?? ''
 			sourceOrderNo.value = outTradeNo
 			relatedOrderNo.value = outTradeNo
 			relatedKind.value = 'wechat'
+			planOrderId.value = order.getString('plan_order_id') ?? ''
 			tradeNo.value = order.getString('payment_no') ?? outTradeNo
 			paymentType.value = paymentTypeText(order.getNumber('payment_type', 1))
 			orderTime.value = formatOrderTime(order.getString('payment_time') ?? '')
 			amountText.value = formatOrderAmount(order.getString('payment_num') ?? '0', false)
 			consumeType.value = '方案购买'
-			productName.value = stageTitle.length > 0 ? courseTitle + ' · ' + stageTitle : courseTitle
+			productName.value = tagName.length > 0 ? tagName + ' · ' + planTitle : planTitle
 			updateRefundStatus(order)
 		}, () => {})
 	}
@@ -176,7 +186,9 @@
 			productName.value = reason.length > 0 ? reason : '康复服务'
 			relatedOrderNo.value = sourceOrderNo.value
 			updateRefundStatus(order)
-			if (reason.indexOf('课程') >= 0) {
+			if (reason.indexOf('康复方案') >= 0) {
+				relatedKind.value = 'plan'
+			} else if (reason.indexOf('课程') >= 0) {
 				relatedKind.value = 'course'
 			} else if (reason.indexOf('器材') >= 0) {
 				relatedKind.value = 'equipment'
@@ -186,6 +198,19 @@
 	}
 
 	function loadProductInfo (reason: string): void {
+		if (reason.indexOf('康复方案') >= 0) {
+			get('/rehab_plan/orders/by-no/' + encodeURIComponent(sourceOrderNo.value), (res) => {
+				if (res.getNumber('code', 0) === 200) {
+					const order = res.getJSON('data')
+					if (order != null) {
+						consumeType.value = '方案购买'
+						productName.value = order.getString('title') ?? '康复方案'
+						planOrderId.value = order.getString('id') ?? ''
+					}
+				}
+			}, () => {})
+			return
+		}
 		if (reason.indexOf('课程') >= 0) {
 			get('/course_order/order_no/' + sourceOrderNo.value, (res) => {
 				if (res.getNumber('code', 0) === 200) {
@@ -238,6 +263,16 @@
 		uni.navigateTo({
 			url: '/pages/related-order/related-order?kind=' + encodeURIComponent(relatedKind.value)
 				+ '&orderNo=' + encodeURIComponent(relatedOrderNo.value)
+		})
+	}
+
+	function viewPlan (): void {
+		if (planOrderId.value.length === 0) {
+			uni.showToast({ title: '方案订单信息不完整', icon: 'none' })
+			return
+		}
+		uni.navigateTo({
+			url: '/pages/rehab-plan/rehab-plan?planOrderId=' + encodeURIComponent(planOrderId.value)
 		})
 	}
 

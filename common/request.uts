@@ -1,5 +1,12 @@
 import { API_BASE_URL } from './config'
 
+function normalizeResponse (data: UTSJSONObject, statusCode: number): UTSJSONObject {
+	if (statusCode === 401 && data.getNumber('code', 0) === 0) {
+		data.set('code', 401)
+	}
+	return data
+}
+
 export function buildHeader (): UTSJSONObject {
 	const header = new UTSJSONObject()
 	header.set('Content-Type', 'application/json')
@@ -32,7 +39,7 @@ export function get (
 			if (res.data == null) {
 				fail('请求数据为空')
 			} else {
-				success(res.data)
+				success(normalizeResponse(res.data, res.statusCode))
 			}
 		},
 		fail: (err) => {
@@ -56,7 +63,7 @@ export function post (
 			if (res.data == null) {
 				fail('请求数据为空')
 			} else {
-				success(res.data)
+				success(normalizeResponse(res.data, res.statusCode))
 			}
 		},
 		fail: (err) => {
@@ -80,7 +87,7 @@ export function put (
 			if (res.data == null) {
 				fail('请求数据为空')
 			} else {
-				success(res.data)
+				success(normalizeResponse(res.data, res.statusCode))
 			}
 		},
 		fail: (err) => {
@@ -102,7 +109,7 @@ export function del (
 			if (res.data == null) {
 				fail('请求数据为空')
 			} else {
-				success(res.data)
+				success(normalizeResponse(res.data, res.statusCode))
 			}
 		},
 		fail: (err) => {
@@ -139,7 +146,7 @@ export function postStream (
 		responseType: 'arraybuffer',
 		success: (res) => {
 			if (res.statusCode !== 200) {
-				fail('连接失败，请稍后重试')
+				fail(res.statusCode === 401 ? '登录已过期，请重新登录' : '连接失败，请稍后重试')
 			}
 			complete()
 		},
