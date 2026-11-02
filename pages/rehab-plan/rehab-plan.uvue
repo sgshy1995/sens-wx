@@ -664,9 +664,9 @@
 	}
 
 	.entry-extra {
-		font-size: 11px;
-		line-height: 18px;
-		color: #9CA3AF;
+		font-size: 14px;
+		line-height: 22px;
+		color: #111111;
 	}
 
 	.tips-card {
